@@ -18,7 +18,7 @@ class LidarReader:
         self.obstacles = []
         
         # LiDAR parameters (adjust based on your sensor configuration)
-        self.max_range = 30.0  # meters
+        self.max_range = 50.0  # meters
         self.min_range = 0.1   # meters
         self.obstacle_threshold = 10.0  # consider anything closer than this as obstacle
         
