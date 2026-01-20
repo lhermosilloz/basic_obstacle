@@ -21,35 +21,37 @@ async def run():
             print("Global position estimate OK")
             break
 
-    # Set the initial setpoint before starting offboard
-    print("Setting initial position setpoint before arming...")
-    await drone.offboard.set_position_ned(PositionNedYaw(0.0, 0.0, -10.0, 0.0))
-
-    # Start the offboard mode
-    print("Starting offboard mode...")
-    await drone.offboard.start()
-
-    # Arm the drone
+    # Arm the drone first
     print("Arming drone...")
     await drone.action.arm()
 
-    # Takeoff
-    print("Taking off...")
-    await drone.action.takeoff()
-    await asyncio.sleep(5)  # Wait for takeoff to complete
+    # Set the initial setpoint at current position (0,0,0)
+    print("Setting initial position setpoint...")
+    await drone.offboard.set_position_ned(PositionNedYaw(0.0, 0.0, 0.0, 0.0))
+
+    # Start offboard mode
+    print("Starting offboard mode...")
+    await drone.offboard.start()
+
+    # Now command takeoff to 5 meters
+    print("Taking off to 5 meters...")
+    await drone.offboard.set_position_ned(PositionNedYaw(0.0, 0.0, -5.0, 0.0))
+    await asyncio.sleep(10)  # Give time to reach altitude
+
+    # Hold position for a few seconds
+    print("Holding position...")
+    await asyncio.sleep(5)
+
+    # Command landing
+    print("Commanding descent...")
+    await drone.offboard.set_position_ned(PositionNedYaw(0.0, 0.0, 0.0, 0.0))
+    await asyncio.sleep(10)  # Give time to descend
 
     print("Stopping offboard mode...")
     await drone.offboard.stop()
 
     print("Landing...")
     await drone.action.land()
-
-    # Wait for landing to complete
-    print("Waiting for landing...")
-    async for in_air in drone.telemetry.in_air():
-        if not in_air:
-            print("Landed!")
-            break
 
     print("Mission complete!")
 
