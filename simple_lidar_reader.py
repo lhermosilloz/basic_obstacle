@@ -21,14 +21,14 @@ class SimpleLidarReader:
     def lidar_callback(self, msg):
         """Simple callback to store latest scan data"""
         self.latest_scan = msg
-        print(f"Received scan with {len(msg.ranges)} points")
+        # print(f"Received scan with {len(msg.ranges)} points")
         
         # Print some basic info
         valid_ranges = [r for r in msg.ranges if not (math.isinf(r) or math.isnan(r))]
-        if valid_ranges:
-            print(f"  Min distance: {min(valid_ranges):.2f}m")
-            print(f"  Max distance: {max(valid_ranges):.2f}m")
-            print(f"  Valid points: {len(valid_ranges)}")
+        # if valid_ranges:
+        #     print(f"  Min distance: {min(valid_ranges):.2f}m")
+        #     print(f"  Max distance: {max(valid_ranges):.2f}m")
+        #     print(f"  Valid points: {len(valid_ranges)}")
         
     def start_listening(self):
         """Start listening to LiDAR topic"""
