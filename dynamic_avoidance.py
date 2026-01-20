@@ -16,13 +16,13 @@ except ImportError:
     print("Install with: sudo apt install python3-gz-transport13")
     exit(1)
 
-
 class DynamicObstacleAvoidanceDrone:
     def __init__(self):
         self.drone = System()
         self.lidar = SimpleLidarReader()
         self.obstacle_detected = False
         self.min_safe_distance = 0.5  # meters
+        self.move_step = 0.001  # meters to move per step
 
     def check_where_obstacle(self):
         """Check where the obstacles are relative to the drone. Return a list of directions with close enough obstacles for drone to respond."""
@@ -35,8 +35,6 @@ class DynamicObstacleAvoidanceDrone:
         angle_min = msg.angle_min
         angle_increment = msg.angle_step
 
-        # Note the closest obstacle distance angle
-
         for i, range_val in enumerate(msg.ranges):
             if math.isinf(range_val) or math.isnan(range_val):
                 continue
@@ -44,17 +42,76 @@ class DynamicObstacleAvoidanceDrone:
             angle = angle_min + (i * angle_increment)
             angle_deg = math.degrees(angle)
 
-            direction_distances.append((angle_deg, range_val))
+            # Only consider obstacles within safe distance
+            if range_val < self.min_safe_distance:
+                direction_distances.append((angle_deg, range_val))
         
-        # Move away from the closest obstacle, so return it
-        min_distance = float('inf')
-        closest_angle = None
-        for angle_deg, distance in direction_distances:
-            if distance < min_distance:
-                min_distance = distance
-                closest_angle = angle_deg
+        # Sort by distance (closest first) and take the 2 closest
+        direction_distances.sort(key=lambda x: x[1])
+        return direction_distances[:2] if len(direction_distances) >= 2 else direction_distances
 
-        return closest_angle, min_distance
+    def calculate_scissor_escape_direction(self, obstacles):
+        """Calculate the escape direction using scissor effect"""
+        if len(obstacles) < 2:
+            if len(obstacles) == 1:
+                # Single obstacle - move directly opposite
+                obstacle_angle = obstacles[0][0]
+                escape_angle = (obstacle_angle + 180) % 360
+                if escape_angle > 180:
+                    escape_angle -= 360
+                return escape_angle
+            else:
+                # No obstacles - stay in place
+                return None
+        
+        angle1, dist1 = obstacles[0]
+        angle2, dist2 = obstacles[1]
+        
+        # Calculate the "blade" directions (opposite to obstacles)
+        blade1_angle = (angle1 + 180) % 360
+        blade2_angle = (angle2 + 180) % 360
+        
+        # Normalize to -180 to 180
+        if blade1_angle > 180:
+            blade1_angle -= 360
+        if blade2_angle > 180:
+            blade2_angle -= 360
+        
+        # Calculate the angle difference
+        angle_diff = abs(blade1_angle - blade2_angle)
+        if angle_diff > 180:
+            angle_diff = 360 - angle_diff
+        
+        # Calculate the midpoint (escape direction)
+        if angle_diff <= 180:
+            # Direct midpoint calculation
+            escape_angle = (blade1_angle + blade2_angle) / 2
+            
+            # Handle wrap-around case
+            if abs(blade1_angle - blade2_angle) > 180:
+                escape_angle = (escape_angle + 180) % 360
+                if escape_angle > 180:
+                    escape_angle -= 360
+        else:
+            # This shouldn't happen with the above logic, but just in case
+            escape_angle = (blade1_angle + blade2_angle) / 2
+        
+        return escape_angle
+
+    def angle_to_movement(self, angle_deg):
+        """Convert angle in degrees to x,y movement components"""
+        if angle_deg is None:
+            return 0.0, 0.0
+            
+        angle_rad = math.radians(angle_deg)
+        # In NED coordinate system:
+        # 0° = North (positive X)
+        # 90° = East (positive Y)
+        # 180° = South (negative X)
+        # 270° = West (negative Y)
+        dx = self.move_step * math.cos(angle_rad)
+        dy = -self.move_step * math.sin(angle_rad)
+        return dx, dy
 
 async def run():
     controller = DynamicObstacleAvoidanceDrone()
@@ -104,36 +161,39 @@ async def run():
     await drone.offboard.set_position_ned(PositionNedYaw(0.0, 0.0, -2.0, 0.0))
     await asyncio.sleep(8)  # Give time to reach altitude
 
-    # Hover X and Y
+    # Hover position
     hover_x = 0.0
     hover_y = 0.0
 
+    print("Starting scissor-based obstacle avoidance...")
+    
     while True:
         # Check for obstacles
-        closest_angle, min_distance = controller.check_where_obstacle()
-        if closest_angle is not None and min_distance < controller.min_safe_distance:
-            print(f"Obstacle detected at angle {closest_angle:.2f}° with distance {min_distance:.2f}m")
-            # Move away from obstacle
-            if -45 <= closest_angle <= 45:
-                # Obstacle in front, move backward
-                print("Moving backward to avoid obstacle")
-                hover_x -= 0.001  
-            elif 45 < closest_angle <= 135:
-                # Obstacle on right, move left
-                print("Moving left to avoid obstacle")
-                hover_y += 0.001
-            elif -135 <= closest_angle < -45:
-                # Obstacle on left, move right
-                print("Moving right to avoid obstacle")
-                hover_y -= 0.001
+        obstacles = controller.check_where_obstacle()
+        
+        if len(obstacles) >= 1:
+            print(f"\nDetected {len(obstacles)} obstacle(s)")
+            
+            # Calculate escape direction using scissor effect
+            escape_angle = controller.calculate_scissor_escape_direction(obstacles)
+            
+            if escape_angle is not None:
+                # Convert angle to movement
+                dx, dy = controller.angle_to_movement(escape_angle)
+                
+                # Update hover position
+                hover_x += dx
+                hover_y += dy
+                
+                # Command the movement
+                await drone.offboard.set_position_ned(PositionNedYaw(hover_x, hover_y, -2.0, 0.0))
             else:
-                # Obstacle behind, move forward
-                print("Moving forward to avoid obstacle")
-                hover_x += 0.001
-            await drone.offboard.set_position_ned(PositionNedYaw(hover_x, hover_y, -2.0, 0.0))
+                print("No clear escape direction calculated")
         else:
+            # No obstacles detected - maintain position
             await drone.offboard.set_position_ned(PositionNedYaw(hover_x, hover_y, -2.0, 0.0))
-        await asyncio.sleep(0.001)
+        
+        await asyncio.sleep(0.001)  # 10Hz update rate
 
 if __name__ == "__main__":
     asyncio.run(run())
