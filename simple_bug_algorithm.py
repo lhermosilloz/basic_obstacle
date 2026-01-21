@@ -18,8 +18,8 @@ except ImportError:
 
 class DynamicObstacleAvoidanceDrone:
     def __init__(self):
-        self.min_safe_distance = 1  # meters
-        self.move_step = 0.001  # meters to move per step
+        self.min_safe_distance = 1.5  # meters
+        self.move_step = 0.01  # meters to move per step
 
     def check_where_obstacle(self, lidar):
         """Check where the obstacles are relative to the drone."""
@@ -97,8 +97,8 @@ class HybridBugAlgorithmDrone:
         self.dynamic_avoidance = DynamicObstacleAvoidanceDrone()
         
         # Bug algorithm parameters
-        self.min_safe_distance = 1  # meters
-        self.step_size = 0.001  # meters
+        self.min_safe_distance = 1.5  # meters
+        self.step_size = 0.01  # meters
         self.altitude = -2.0  # meters (negative for NED)
         
         # Target and position
@@ -111,7 +111,7 @@ class HybridBugAlgorithmDrone:
         self.state = "GO_TO_GOAL"  # GO_TO_GOAL, DYNAMIC_AVOID, FOLLOW_WALL
         self.hit_point = None
         self.dynamic_avoid_timeout = 0
-        self.max_dynamic_avoid_steps = 50  # Maximum steps in dynamic avoidance mode
+        self.max_dynamic_avoid_steps = 1  # Maximum steps in dynamic avoidance mode
         
     def distance_to_target(self):
         """Calculate distance to target"""
@@ -162,10 +162,23 @@ class HybridBugAlgorithmDrone:
     
     async def move_to_position(self, x, y):
         """Move drone to specific position"""
+        # Calculate movement direction
+        dx = x - self.current_x
+        dy = y - self.current_y
+        
+        # Calculate yaw angle (direction to face)
+        if dx != 0 or dy != 0:  # Only calculate if there's actual movement
+            yaw_rad = math.atan2(dy, dx)  # Angle in radians
+            yaw_deg = math.degrees(yaw_rad)  # Convert to degrees for debugging
+        else:
+            yaw_rad = 0.0  # Face north if no movement
+        
         self.current_x = x
         self.current_y = y
-        await self.drone.offboard.set_position_ned(PositionNedYaw(x, y, self.altitude, 0.0))
-        await asyncio.sleep(0.001)
+        
+        # Set position with yaw to face direction of movement
+        await self.drone.offboard.set_position_ned(PositionNedYaw(x, y, self.altitude, yaw_deg))
+        await asyncio.sleep(0.01)
     
     async def navigate_to_target(self):
         """Main navigation loop using hybrid bug algorithm with dynamic avoidance"""
