@@ -25,7 +25,7 @@ class VerticalBugAlgorithm:
         self.min_safe_distance = 2.0  # meters
         self.step_size = 0.3  # meters per step (horizontal)
         self.climb_step = 1.0  # meters per climb step
-        self.min_altitude = -15.0  # Maximum height (NED is negative)
+        self.min_altitude = -200.0  # Maximum height (NED is negative)
         self.target_altitude = target_altitude  # Desired cruising altitude
         
         # Target and position
@@ -49,8 +49,8 @@ class VerticalBugAlgorithm:
         return math.atan2(self.target_y - self.current_y, 
                          self.target_x - self.current_x)
     
-    def check_obstacle_in_direction(self, direction_angle, sector_width=40):
-        """Check if there's an obstacle in a specific direction"""
+    def check_front_obstacle(self):
+        """Check if there's an obstacle in front of the drone"""
         if self.lidar.latest_scan is None:
             return False
             
@@ -58,7 +58,8 @@ class VerticalBugAlgorithm:
         angle_min = msg.angle_min
         angle_increment = msg.angle_step
         
-        direction_deg = math.degrees(direction_angle)
+        # Check front sector (±30 degrees)
+        front_distances = []
         
         for i, range_val in enumerate(msg.ranges):
             if math.isinf(range_val) or math.isnan(range_val):
@@ -67,14 +68,17 @@ class VerticalBugAlgorithm:
             angle = angle_min + (i * angle_increment)
             angle_deg = math.degrees(angle)
             
-            # Normalize angle difference to -180 to 180
-            angle_diff = ((angle_deg - direction_deg + 180) % 360) - 180
-            
-            if abs(angle_diff) <= sector_width/2:
-                if range_val < self.min_safe_distance:
-                    return True
+            # Check if this point is in front sector
+            if abs(angle_deg) <= 30:  # ±30 degrees front
+                front_distances.append(range_val)
+        
+        if front_distances:
+            min_front_distance = min(front_distances)
+            print(f"Minimum front distance: {min_front_distance:.2f}m")
+            return min_front_distance < self.min_safe_distance
+        
         return False
-    
+
     async def move_to_position(self, x, y, altitude):
         """Move drone to specific position and face the direction of movement"""
         # Calculate movement direction
@@ -94,7 +98,7 @@ class VerticalBugAlgorithm:
         # Set position with current yaw (in degrees)
         await self.drone.offboard.set_position_ned(
             PositionNedYaw(x, y, altitude, self.current_yaw))
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(0.1)
     
     async def navigate_to_target(self):
         """Main navigation loop using Vertical Bug Algorithm"""
@@ -115,8 +119,8 @@ class VerticalBugAlgorithm:
                 
                 # Small step size for safety
                 current_step = 0.1
-                if distance < 10.0:
-                    current_step = max(0.05, distance * 0.1)
+                # if distance < 10.0:
+                #     current_step = max(0.05, distance * 0.1)
                 
                 # Calculate next position
                 next_x = self.current_x + current_step * math.cos(target_angle)
@@ -127,7 +131,7 @@ class VerticalBugAlgorithm:
                 await self.move_to_position(next_x, next_y, self.current_altitude)
                 
                 # Then check if we hit an obstacle
-                if self.check_obstacle_in_direction(target_angle, 40):
+                if self.check_front_obstacle():
                     print(">> OBSTACLE DETECTED! Switching to climbing mode.")
                     self.state = "CLIMBING"
                 
@@ -142,9 +146,12 @@ class VerticalBugAlgorithm:
                 print(f"Climbing to altitude: {new_altitude:.1f}m")
                 await self.move_to_position(self.current_x, self.current_y, new_altitude)
                 
+                # Wait for it to climb to that altitude
+                await asyncio.sleep(1)
+
                 # After climbing, check if path is clear
                 target_angle = self.angle_to_target()
-                if not self.check_obstacle_in_direction(target_angle, 40):
+                if not self.check_front_obstacle():
                     print(">> PATH CLEAR! Returning to goal-seeking mode.")
                     self.state = "GO_TO_GOAL"
             
@@ -166,7 +173,7 @@ class VerticalBugAlgorithm:
 async def run():
     # Set target coordinates (modify these as needed)
     TARGET_X = 0.0  # meters
-    TARGET_Y = 30.0  # meters
+    TARGET_Y = 40.0  # meters
     TARGET_ALTITUDE = -3.0  # meters (negative in NED)
     
     bug = VerticalBugAlgorithm(TARGET_X, TARGET_Y, TARGET_ALTITUDE)
