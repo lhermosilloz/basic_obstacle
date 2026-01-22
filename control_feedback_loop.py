@@ -67,8 +67,6 @@ class SimpleFeedbackController:
             
         return error
     
-
-    
     def at_target(self):
         """Check if we're at the target position"""
         _, _, _, distance_error = self.calculate_position_error()
