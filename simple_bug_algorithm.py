@@ -187,7 +187,7 @@ async def run():
 
     # Set goal position (10 meters forward, 5 meters right)
     goal_x = 0.0
-    goal_y = 40.0
+    goal_y = 20.0
     
     print(f"Starting Bug algorithm to reach goal: ({goal_x}, {goal_y})")
     
@@ -201,11 +201,11 @@ async def run():
 
     # Return to start and land
     print("Returning to start position...")
-    await drone.offboard.set_position_ned(PositionNedYaw(0.0, 0.0, -5.0, 90.0))
+    await drone.offboard.set_position_ned(PositionNedYaw(goal_x, goal_y, -5.0, 90.0))
     await asyncio.sleep(10)
 
     print("Landing...")
-    await drone.offboard.set_position_ned(PositionNedYaw(0.0, 0.0, 0.0, 90.0))
+    await drone.offboard.set_position_ned(PositionNedYaw(goal_x, goal_y, 0.0, 90.0))
     await asyncio.sleep(10)
 
     print("Stopping offboard mode...")
