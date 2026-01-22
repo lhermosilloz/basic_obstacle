@@ -17,7 +17,7 @@ except ImportError:
     exit(1)
 
 class BugAlgorithm:
-    def __init__(self, drone, lidar, goal_x, goal_y, altitude=-5.0):
+    def __init__(self, drone, lidar, goal_x, goal_y, altitude=-1.0):
         self.drone = drone
         self.lidar = lidar
         self.goal_x = goal_x
@@ -73,16 +73,20 @@ class BugAlgorithm:
         )
     
     async def follow_wall(self, step_size=0.2):
-        """Follow wall by moving right when blocked in front"""
-        # Simple wall following: move right when front blocked, forward when front clear
+        """Follow wall by moving left when blocked in front"""
+        # Simple wall following: move left when front blocked, forward when front clear
         if self.lidar.check_front_obstacles():
-            # Move right
-            angle_rad = math.radians(self.current_yaw - 90)  # 90 degrees right
+            # Move left
+            angle_rad = math.radians(self.current_yaw - 90)  # 90 degrees left
             self.current_x += step_size * math.cos(angle_rad)
             self.current_y += step_size * math.sin(angle_rad)
             print(f"Wall following - moving right: ({self.current_x:.1f}, {self.current_y:.1f})")
+        elif not self.lidar.check_right_obstacles() and not self.lidar.check_front_obstacles():
+            # Clear path to goal possible
+            print("Path to goal clear, switching back to GO_TO_GOAL mode.")
+            self.state = "GO_TO_GOAL"
         else:
-            # Move forward
+            # Move forward whilst wall following
             angle_rad = math.radians(self.current_yaw)
             self.current_x += step_size * math.cos(angle_rad)
             self.current_y += step_size * math.sin(angle_rad)
@@ -182,7 +186,7 @@ async def run():
 
     # Take off
     print("Taking off to 5 meters...")
-    await drone.offboard.set_position_ned(PositionNedYaw(0.0, 0.0, -5.0, 90))
+    await drone.offboard.set_position_ned(PositionNedYaw(0.0, 0.0, -1.0, 90))
     await asyncio.sleep(10)
 
     # Set goal position (10 meters forward, 5 meters right)
@@ -201,7 +205,7 @@ async def run():
 
     # Return to start and land
     print("Returning to start position...")
-    await drone.offboard.set_position_ned(PositionNedYaw(goal_x, goal_y, -5.0, 90.0))
+    await drone.offboard.set_position_ned(PositionNedYaw(goal_x, goal_y, -1.0, 90.0))
     await asyncio.sleep(10)
 
     print("Landing...")
