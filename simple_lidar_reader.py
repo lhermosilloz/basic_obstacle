@@ -93,7 +93,7 @@ class SimpleLidarReader:
             angle_deg = math.degrees(angle)
             
             # Check if this point is in front sector
-            if abs(angle_deg) <= 30:  # ±30 degrees front
+            if abs(angle_deg) <= 25:  # ±30 degrees front
                 if range_val < 2.0:
                     print(f"Obstacle detected at {range_val:.2f}m, angle {angle_deg:.1f}°")
                     return True
@@ -109,7 +109,7 @@ class SimpleLidarReader:
         angle_min = msg.angle_min
         angle_increment = msg.angle_step
         
-        # Check right sector (80 to 100 degrees)
+        # Check right sector (-30 to -120 degrees)
         for i, range_val in enumerate(msg.ranges):
             if math.isinf(range_val) or math.isnan(range_val):
                 continue
@@ -118,7 +118,7 @@ class SimpleLidarReader:
             angle_deg = math.degrees(angle)
             
             # Check if this point is in right sector
-            if 80 <= angle_deg <= 100:
+            if -120 <= angle_deg <= -25:
                 if range_val < 1.0:
                     print(f"Right obstacle detected at {range_val:.2f}m, angle {angle_deg:.1f}°")
                     return True
@@ -126,7 +126,7 @@ class SimpleLidarReader:
         return False
 
     def check_left_obstacles(self) -> bool:
-        """Check if there are obstacles within 1 meter on the left side (-100 to -80 degrees)"""
+        """Check if there are obstacles within 1 meter on the left side (30 to 120 degrees)"""
         if self.latest_scan is None:
             return False
             
@@ -134,7 +134,7 @@ class SimpleLidarReader:
         angle_min = msg.angle_min
         angle_increment = msg.angle_step
         
-        # Check left sector (-100 to -80 degrees)
+        # Check left sector (30 to 120 degrees)
         for i, range_val in enumerate(msg.ranges):
             if math.isinf(range_val) or math.isnan(range_val):
                 continue
@@ -143,7 +143,7 @@ class SimpleLidarReader:
             angle_deg = math.degrees(angle)
             
             # Check if this point is in left sector
-            if -100 <= angle_deg <= -80:
+            if 25 <= angle_deg <= 120:
                 if range_val < 1.0:
                     print(f"Left obstacle detected at {range_val:.2f}m, angle {angle_deg:.1f}°")
                     return True
@@ -164,6 +164,11 @@ def main():
         while True:
             if reader.latest_scan is None:
                 print("Waiting for LiDAR data...")
+            # Debug front, left, and right obstacle checks
+            else:
+                front = reader.check_front_obstacles()
+                left = reader.check_left_obstacles()
+                right = reader.check_right_obstacles()
             time.sleep(2.0)
     except KeyboardInterrupt:
         print("\nStopping...")
