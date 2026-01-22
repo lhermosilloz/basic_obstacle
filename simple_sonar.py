@@ -54,12 +54,12 @@ class SimpleLidarReader:
                 continue
                 
             # Check for obstacles in specific directions
-            if abs(angle_deg) < 10 and range_val < 2.0:  # Front (±10°)
+            if abs(angle_deg) < 45 and range_val < 1.0:  # Front (±10°)
                 print(f"Obstacle ahead: {range_val:.2f}m at {angle_deg:.1f}°")
-            elif -90 < angle_deg < -80 and range_val < 2.0:  # Left side
-                print(f"Obstacle on left: {range_val:.2f}m at {angle_deg:.1f}°")
-            elif 80 < angle_deg < 90 and range_val < 2.0:  # Right side
+            elif -90 < angle_deg < -80 and range_val < 1.0:  # Right side
                 print(f"Obstacle on right: {range_val:.2f}m at {angle_deg:.1f}°")
+            elif 80 < angle_deg < 90 and range_val < 1.0:  # Left side
+                print(f"Obstacle on left: {range_val:.2f}m at {angle_deg:.1f}°")
 
     def get_direction_sectors(self, msg, num_sectors=8):
         """Divide scan into directional sectors"""
@@ -78,8 +78,8 @@ class SimpleLidarReader:
             normalized_angle = (angle + 2*math.pi) % (2*math.pi)
             
             sector = int(normalized_angle / sector_size)
-            direction_name = ["Front", "Front-Right", "Right", "Back-Right", 
-                            "Back", "Back-Left", "Left", "Front-Left"][sector]
+            direction_name = ["Front", "Front-Left", "Left", "Back-Left", 
+                            "Back", "Back-Right", "Right", "Front-Right"][sector]
             
             if direction_name not in sectors:
                 sectors[direction_name] = []
