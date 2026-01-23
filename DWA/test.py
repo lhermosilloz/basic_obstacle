@@ -188,4 +188,3 @@ if __name__ == "__main__":
     # visualize_velocity_space()
     # test_scanner()
     # collision_check_trajectories()
-    
