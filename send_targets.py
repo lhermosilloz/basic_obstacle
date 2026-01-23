@@ -7,7 +7,7 @@ import time
 import math
 from mavsdk import System
 from mavsdk.offboard import PositionNedYaw
-from vertical_bug_algorithm import VerticalBugAlgorithm
+from Bug.vertical_bug_algorithm import VerticalBugAlgorithm
 
 async def run():
     # Set target coordinates (modify these as needed)
