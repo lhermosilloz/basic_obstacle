@@ -8,6 +8,7 @@ import math
 from mavsdk import System
 from mavsdk.offboard import PositionNedYaw
 from simple_lidar_reader import SimpleLidarReader
+import random
 
 try:
     import gz.transport13 as gz_transport
@@ -26,13 +27,18 @@ class BugAlgorithm:
         self.current_x = 0.0
         self.current_y = 0.0
         self.current_yaw = 90.0
+
+        # Synchronize waypoints commands with current positions
+        self.target_x = 0.0
+        self.target_y = 0.0
+        self.position_tolerance = 0.2  # meters
         
         # Bug algorithm states
         self.state = "GO_TO_GOAL"  # or "WALL_FOLLOW"
         self.wall_follow_start_x = None
         self.wall_follow_start_y = None
         self.closest_distance_to_goal = float('inf')
-        
+    
     def distance_to_goal(self, x=None, y=None):
         """Calculate distance from current position (or given x,y) to goal"""
         if x is None:
@@ -71,16 +77,27 @@ class BugAlgorithm:
         await self.drone.offboard.set_position_ned(
             PositionNedYaw(self.current_x, self.current_y, self.altitude, self.current_yaw)
         )
-    
-    async def follow_wall(self, step_size=0.2):
+
+    async def follow_left_wall(self, step_size=0.2):
         """Follow wall by moving left when blocked in front"""
+        if not self.lidar.check_front_obstacles():
+            print("Path to goal clear, switching back to GO_TO_GOAL mode.")
+            self.state = "GO_TO_GOAL"
+            return
+
         # Simple wall following: move left when front blocked, forward when front clear
-        if self.lidar.check_front_obstacles():
+        if self.lidar.check_front_obstacles() and not self.lidar.check_left_obstacles():
             # Move left
             angle_rad = math.radians(self.current_yaw - 90)  # 90 degrees left
             self.current_x += step_size * math.cos(angle_rad)
             self.current_y += step_size * math.sin(angle_rad)
-            print(f"Wall following - moving right: ({self.current_x:.1f}, {self.current_y:.1f})")
+            print(f"Wall following - moving left: ({self.current_x:.1f}, {self.current_y:.1f})")
+        elif self.lidar.check_front_obstacles() and self.lidar.check_left_obstacles():
+            # Blocked on front and left, turn left and continue process
+            angle_rad = math.radians(self.current_yaw - 90)  # 90 degrees left
+            self.current_x += step_size * math.cos(angle_rad)
+            self.current_y += step_size * math.sin(angle_rad)
+            print(f"Wall following - blocked front and left, turning left: ({self.current_x:.1f}, {self.current_y:.1f})")
         elif not self.lidar.check_right_obstacles() and not self.lidar.check_front_obstacles():
             # Clear path to goal possible
             print("Path to goal clear, switching back to GO_TO_GOAL mode.")
@@ -95,7 +112,47 @@ class BugAlgorithm:
         await self.drone.offboard.set_position_ned(
             PositionNedYaw(self.current_x, self.current_y, self.altitude, self.current_yaw)
         )
-    
+
+    async def follow_right_wall(self, step_size=0.2):
+        """Simplified right wall following"""
+        
+        # Priority order for wall following:
+        # 1. If right is clear, turn right and move
+        # 2. If front is clear, move forward  
+        # 3. If front is blocked, turn left
+        
+        if not self.lidar.check_right_obstacles():
+            # Right is clear - turn right and move (stay close to wall)
+            self.current_yaw = (self.current_yaw + 90) % 360
+            angle_rad = math.radians(self.current_yaw)
+            self.current_x += step_size * math.cos(angle_rad)
+            self.current_y += step_size * math.sin(angle_rad)
+            print(f"Right clear - turned right and moved to: ({self.current_x:.1f}, {self.current_y:.1f})")
+            
+        elif not self.lidar.check_front_obstacles():
+            # Front is clear - move forward
+            angle_rad = math.radians(self.current_yaw)
+            self.current_x += step_size * math.cos(angle_rad)
+            self.current_y += step_size * math.sin(angle_rad)
+            print(f"Front clear - moving forward: ({self.current_x:.1f}, {self.current_y:.1f})")
+            
+        else:
+            # Front is blocked - turn left (don't move)
+            self.current_yaw = (self.current_yaw - 90) % 360
+            print(f"Front blocked - turning left to: {self.current_yaw:.0f}°")
+        
+        # Check if we can switch back to goal mode
+        if not self.lidar.check_front_obstacles():
+            current_distance = self.distance_to_goal()
+            if current_distance < self.closest_distance_to_goal:
+                print("Closer to goal - switching to GO_TO_GOAL")
+                self.state = "GO_TO_GOAL"
+                return
+        
+        await self.drone.offboard.set_position_ned(
+            PositionNedYaw(self.current_x, self.current_y, self.altitude, self.current_yaw)
+        )
+
     async def run_bug_algorithm(self):
         """Main Bug algorithm loop"""
         step_size = 0.2
@@ -115,7 +172,7 @@ class BugAlgorithm:
             
             elif self.state == "WALL_FOLLOW":
                 # Follow the wall
-                await self.follow_wall(step_size)
+                await self.follow_left_wall(step_size)
                 
                 # Check if we should switch back to go-to-goal mode
                 current_distance = self.distance_to_goal()
