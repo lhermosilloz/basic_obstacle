@@ -6,6 +6,8 @@ import asyncio
 import numpy as np
 import time
 import math
+from mavsdk import System
+from mavsdk.offboard import VelocityBodyYawspeed
 try:
     import gz.transport13 as gz_transport
 except ImportError:
@@ -15,6 +17,10 @@ except ImportError:
 
 class DynamicWindowApproachPlanner:
     def __init__(self):
+        # -- MAVSDK Stuff --
+        self.drone = System()
+        asyncio.run(self.connect_drone())
+
         # -- LiDAR Stuff --
         self.node = gz_transport.Node() # LiDAR subscriber node
         self.latest_scan = None         # Store latest LiDAR scan
@@ -230,12 +236,27 @@ class DynamicWindowApproachPlanner:
         min_index = np.argmin(scores)
         return trajectories[min_index]
     
+    def run_dwa_loop(self):
+        """Main DWA loop to be called periodically"""
+        pass
 
-    """ --- Test Functions Below --- 
-    Next step:
-        Implement the integration loop that:
+    async def connect_drone(self):
+        """Connect to the drone using MAVSDK"""
+        
+        # Connect to drone
+        print("Connecting to drone...")
+        await self.drone.connect(system_address="udp://:14540")
 
-        Gets the current state and latest LiDAR scan
-        Runs the DWA steps above (sampling, prediction, collision checking, scoring)
-        Sends the best velocity command to your drone/simulator
-        Repeats at your planning frequency (e.g., 10Hz)"""
+        # Wait for connection
+        print("Waiting for drone to connect...")
+        async for state in self.drone.core.connection_state():
+            if state.is_connected:
+                print("Drone connected!")
+                break
+
+        # Get global position estimate
+        print("Waiting for global position estimate...")
+        async for health in self.drone.telemetry.health():
+            if health.is_global_position_ok and health.is_home_position_ok:
+                print("Global position estimate OK")
+                break
