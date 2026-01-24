@@ -35,8 +35,8 @@ class SimpleFeedbackController:
                 self.current_z = position_ned.position.down_m
                 break
                 
-            async for attitude in self.drone.telemetry.attitude():
-                self.current_yaw = math.degrees(attitude.yaw_rad)
+            async for heading in self.drone.telemetry.heading():
+                self.current_yaw = heading.heading_deg
                 if self.current_yaw < 0:
                     self.current_yaw += 360  # Convert to [0, 360]
                 break
