@@ -19,7 +19,6 @@ class DynamicWindowApproachPlanner:
     def __init__(self):
         # -- MAVSDK Stuff --
         self.drone = System()
-        asyncio.run(self.connect_drone())
 
         # -- LiDAR Stuff --
         self.node = gz_transport.Node() # LiDAR subscriber node
@@ -242,9 +241,45 @@ class DynamicWindowApproachPlanner:
         min_index = np.argmin(scores)
         return trajectories[min_index]
     
-    def run_dwa_loop(self):
-        """Main DWA loop to be called periodically"""
-        pass
+    async def run_dwa_loop(self, goal, dt=0.1, stop_distance=0.5):
+        """Main DWA loop to be called periodically
+        Inputs:
+        - Goal position
+        - Planning frequency
+        - Stop conditions
+        Outputs:
+        - No return value
+        """
+        while True:
+            # 1. Get current state (position, yaw, etc)
+            state = await self.get_current_state()
+
+            if state is None:
+                print("Failed to get state, retrying...")
+                await asyncio.sleep(dt)
+                continue
+
+            print(f"Current State: x={state[0]:.2f}, y={state[1]:.2f}, z={state[2]:.2f}, yaw={state[3]:.2f}")
+
+            # 2. Get latest obstacles from LiDAR
+
+            # 3. Sample velocities
+
+            # 4. Predict trajectories
+
+            # 5. Collision checking
+
+            # 6. Trajectory scoring
+
+            # 7. Choose best trajectory
+
+            # 8. Stop if all in collision
+
+            # 9. Send velocity command
+
+            # 10. Check if goal reached
+
+            await asyncio.sleep(dt)
 
     async def connect_drone(self):
         """Connect to the drone using MAVSDK"""
@@ -266,3 +301,30 @@ class DynamicWindowApproachPlanner:
             if health.is_global_position_ok and health.is_home_position_ok:
                 print("Global position estimate OK")
                 break
+
+    async def get_current_state(self):
+        """Get current state from drone telemetry"""
+
+        """
+        MAVSDK API:
+        - mavsdk.telemetry.PositionBody(x_m, y_m, z_m)
+        - mavsdk.telemetry.Heading(heading_deg)
+        And?
+        - mavsdk.telemetry.VelocityBody(x_m_s, y_m_s, z_m_s)
+        """
+
+        try:
+            # Get position
+            async for position in self.drone.telemetry.odometry():
+                x = position.position_body.x_m
+                y = position.position_body.y_m
+                z = position.position_body.z_m
+                break
+            # Get heading
+            async for heading in self.drone.telemetry.heading():
+                yaw = heading.heading_deg
+                break
+            return [x, y, z, yaw]
+        except Exception as e:
+            print(f"Failed to get current state: {e}")
+            return None
