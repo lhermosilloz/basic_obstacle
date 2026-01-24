@@ -191,3 +191,51 @@ class DynamicWindowApproachPlanner:
 
         return collision_mask
 
+    def trajectory_scoring(self, goal, collision_mask, trajectories):
+        """For each safe trajectory, compute a score based on criteria like:
+        - Proximity to goal
+        - Obstacle proximity
+        - Speed
+        - Smoothness
+        Inputs:
+        - goal: (x, y) coordinates of the goal position
+        - collision_mask: List of booleans indicating if trajectory is in collision
+        - trajectories: List of predicted trajectories
+        Outputs:
+        - Return trajectories with their scores.
+        """
+        scores = []
+        for i, traj in enumerate(trajectories):
+            if collision_mask[i]:
+                scores.append(float('inf'))  # High cost for collision trajectories
+                continue
+
+            # Distance to goal at the end of trajectory
+            end_point = traj[-1]
+            ex, ey, ez, _ = end_point
+            goal_distance = math.sqrt((ex - goal[0]) ** 2 + (ey - goal[1]) ** 2)
+
+            # Optional: Obstacle proximity and speed scoring can be added here
+
+            # Optional: Speed
+
+            # Optional: Smoothness
+            
+            score = goal_distance # + other criteria
+            scores.append(score)
+        return scores
+    
+    def choose_best_trajectory(self, scores, trajectories):
+        """Choose the trajectory with the lowest score"""
+        min_index = np.argmin(scores)
+        return trajectories[min_index]
+    
+
+    """ --- Test Functions Below --- 
+    Next step:
+        Implement the integration loop that:
+
+        Gets the current state and latest LiDAR scan
+        Runs the DWA steps above (sampling, prediction, collision checking, scoring)
+        Sends the best velocity command to your drone/simulator
+        Repeats at your planning frequency (e.g., 10Hz)"""
