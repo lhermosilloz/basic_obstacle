@@ -213,7 +213,7 @@ class DynamicWindowApproachPlanner:
         scores = []
         for i, traj in enumerate(trajectories):
             if collision_mask[i]:
-                scores.append(float('inf'))  # High cost for collision trajectories
+                scores.append(float('inf'))  # High cost for collision trajectories (Already considers obstacles)
                 continue
 
             # Distance to goal at the end of trajectory
@@ -221,13 +221,19 @@ class DynamicWindowApproachPlanner:
             ex, ey, ez, _ = end_point
             goal_distance = math.sqrt((ex - goal[0]) ** 2 + (ey - goal[1]) ** 2)
 
-            # Optional: Obstacle proximity and speed scoring can be added here
-
             # Optional: Speed
 
+
             # Optional: Smoothness
+            beta = 1 # Weight for smoothness (Increase for smoothness, decrease for sharper turns)
+            smoothness_score = 0
+            for i in range(1, len(traj)):
+                prev_yaw = traj[i-1][3]
+                curr_yaw = traj[i][3]
+                smoothness_score += abs(curr_yaw - prev_yaw)
+            smoothness_score *= beta
             
-            score = goal_distance # + other criteria
+            score = goal_distance + smoothness_score  # + other criteria
             scores.append(score)
         return scores
     
