@@ -182,9 +182,29 @@ def collision_check_trajectories():
     plt.legend()
     plt.show()
     
+def test_current_state():
+    planner = DynamicWindowApproachPlanner()
+    async def print_state():
+        while True:
+            state = await planner.get_current_state()
+            if state is not None:
+                print(f"Current State: x={state[0]:.2f}, y={state[1]:.2f}, z={state[2]:.2f}, yaw={state[3]:.2f}")
+                break
+            else:
+                print("Waiting for current state...")
+            await asyncio.sleep(2.0)
+    asyncio.run(print_state())
+
+async def main(planner):
+    await planner.connect_drone()
+    await planner.run_dwa_loop(goal=(0, 0), dt=0.1, stop_distance=0)
+
 if __name__ == "__main__":
     # test_velocity_sampler()
     # test_trajectory_prediction()
     # visualize_velocity_space()
     # test_scanner()
     # collision_check_trajectories()
+    # test_current_state()
+    planner = DynamicWindowApproachPlanner()
+    asyncio.run(main(planner))
