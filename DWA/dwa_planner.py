@@ -259,11 +259,13 @@ class DynamicWindowApproachPlanner:
                 await asyncio.sleep(dt)
                 continue
 
-            print(f"Current State: x={state[0]:.2f}, y={state[1]:.2f}, z={state[2]:.2f}, yaw={state[3]:.2f}")
+            # print(f"Current State: x={state[0]:.2f}, y={state[1]:.2f}, z={state[2]:.2f}, yaw={state[3]:.2f}")
 
             # 2. Get latest obstacles from LiDAR
+            obstacles = self.get_obstacles()
 
             # 3. Sample velocities
+            
 
             # 4. Predict trajectories
 
@@ -314,17 +316,22 @@ class DynamicWindowApproachPlanner:
         """
 
         try:
-            # Get position
+            # Get position and velocities
             async for position in self.drone.telemetry.odometry():
                 x = position.position_body.x_m
                 y = position.position_body.y_m
                 z = position.position_body.z_m
+                x_vel = position.velocity_body.x_m_s
+                y_vel = position.velocity_body.y_m_s
+                z_vel = position.velocity_body.z_m_s
+                yaw_rate = position.angular_velocity_body.yaw_rad_s * (180.0 / math.pi)  # Convert to deg/s
                 break
             # Get heading
             async for heading in self.drone.telemetry.heading():
                 yaw = heading.heading_deg
                 break
-            return [x, y, z, yaw]
+
+            return [x, y, z, yaw, x_vel, y_vel, z_vel, yaw_rate]
         except Exception as e:
             print(f"Failed to get current state: {e}")
             return None

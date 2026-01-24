@@ -188,7 +188,8 @@ def test_current_state():
         while True:
             state = await planner.get_current_state()
             if state is not None:
-                print(f"Current State: x={state[0]:.2f}, y={state[1]:.2f}, z={state[2]:.2f}, yaw={state[3]:.2f}")
+                # [x, y, z, yaw, x_vel, y_vel, z_vel, yaw_rate]
+                print(f"Current State: x={state[0]:.2f}, y={state[1]:.2f}, z={state[2]:.2f}, yaw={state[3]:.2f}, x_vel={state[4]:.2f}, y_vel={state[5]:.2f}, z_vel={state[6]:.2f}, yaw_rate={state[7]:.2f}")
                 break
             else:
                 print("Waiting for current state...")
