@@ -198,7 +198,7 @@ def test_current_state():
 
 async def main(planner):
     await planner.connect_drone()
-    await planner.run_dwa_loop(goal=(0, 0), dt=0.1, stop_distance=0)
+    await planner.run_dwa_loop(goal=(0, 4), dt=0.1, stop_distance=0.2)
 
 if __name__ == "__main__":
     # test_velocity_sampler()
