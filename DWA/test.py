@@ -140,7 +140,7 @@ def collision_check_trajectories():
     candidates = planner.sample_velocities(current_forward_vel=0.0, current_yaw_rate=0.0)
     
     # Predict trajectories
-    trajectories = planner.trajectory_prediction(current_state, candidates, time_horizon=1.0, dt=0.1)
+    trajectories = planner.trajectory_prediction(current_state, candidates, time_horizon=20.0, dt=0.05)
     
     # Get obstacles (in drone frame)
     obstacles = []
@@ -198,14 +198,14 @@ def test_current_state():
 
 async def main(planner):
     await planner.connect_drone()
-    await planner.run_dwa_loop(goal=(0, 4), dt=0.1, stop_distance=0.2)
+    await planner.run_dwa_loop(goal=(0, 4), dt=0.05, stop_distance=0.2)
 
 if __name__ == "__main__":
     # test_velocity_sampler()
     # test_trajectory_prediction()
     # visualize_velocity_space()
     # test_scanner()
-    # collision_check_trajectories()
+    #collision_check_trajectories()
     # test_current_state()
     planner = DynamicWindowApproachPlanner()
     asyncio.run(main(planner))
