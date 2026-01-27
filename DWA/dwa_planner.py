@@ -9,6 +9,7 @@ import math
 from mavsdk import System
 from mavsdk.offboard import VelocityBodyYawspeed
 import matplotlib.pyplot as plt
+from dwa_visualizer import DWAVisualizer
 try:
     import gz.transport13 as gz_transport
 except ImportError:
@@ -33,7 +34,7 @@ class DynamicWindowApproachPlanner:
 
         # The x500 max accelerations are found in px4 parameters
         max_hor_accel = 5.0  # m/s^2 (MPC_ACC_HOR_MAX)
-        max_yaw_accel = 20.0 # deg/s^2 (MPC_YAWRAUTO_ACC)
+        max_yaw_accel = 300.0 # deg/s^2 (MPC_YAWRAUTO_ACC was 20)
 
         # Calculate reachable velocity ranges (How much it can change in 0.1s)
         max_forward_change = max_hor_accel * dt
@@ -44,14 +45,14 @@ class DynamicWindowApproachPlanner:
         max_forward = min(12.0, current_forward_vel + max_forward_change)    # MPC_XY_VEL_MAX
 
         # Reachable yaw rate range
-        min_yaw = max(-60.0, current_yaw_rate - max_yaw_change) # MPC_YAWRAUTO_MAX 
+        min_yaw = max(-60.0, current_yaw_rate - max_yaw_change) # MPC_YAWRAUTO_MAX (was 60)
         max_yaw = min(60.0, current_yaw_rate + max_yaw_change)
         # print(f"Sampling velocities: Forward [{min_forward:.1f}, {max_forward:.1f}] m/s, Yaw [{min_yaw:.1f}, {max_yaw:.1f}] deg/s")
 
         # Sample forward velocities (np.arange for float steps, linspace for fixed number of samples)
-        for forward_vel in np.linspace(min_forward, max_forward, 6):
+        for forward_vel in np.linspace(min_forward, max_forward, 8):
             # Sample yaw rates
-            for yaw_rate in np.linspace(min_yaw, max_yaw, 6):
+            for yaw_rate in np.linspace(min_yaw, max_yaw, 10):
                 candidates.append({
                     'forward_m_s': forward_vel,
                     'right_m_s': 0.0,
@@ -59,13 +60,13 @@ class DynamicWindowApproachPlanner:
                     'yawspeed_deg_s': yaw_rate
                 })
 
-        # Include stopping as an option
-        candidates.append({
-            'forward_m_s': 0.0,
-            'right_m_s': 0.0,
-            'down_m_s': 0.0,
-            'yawspeed_deg_s': 0.0
-        })
+        for rot in [-45, -30, -15, 15, 30, 45]:
+            candidates.append({
+                'forward_m_s': 0.0,
+                'right_m_s': 0.0,
+                'down_m_s': 0.0,
+                'yawspeed_deg_s': rot
+            })
 
         return candidates
 
@@ -220,49 +221,124 @@ class DynamicWindowApproachPlanner:
 
         return collision_mask
 
-    def trajectory_scoring(self, goal, collision_mask, trajectories):
-        """For each safe trajectory, compute a score based on criteria like:
-        - Proximity to goal
-        - Obstacle proximity
-        - Speed
-        - Smoothness
-        Inputs:
-        - goal: (x, y) coordinates of the goal position
-        - collision_mask: List of booleans indicating if trajectory is in collision
-        - trajectories: List of predicted trajectories
-        Outputs:
-        - Return trajectories with their scores.
+    def trajectory_scoring(self, goal, collision_mask, trajectories, candidates, obstacles):
+        """
+        Modified Scoring Function:
+        1. HEADING: Penalty for not facing goal (Low Weight)
+        2. DIST: Penalty for distance to goal (High Weight)
+        3. VELOCITY: Reward for high speed (prevents baby steps)
         """
         scores = []
+        
+        # - w_heading
+        #    We want the drone to drive roughly towards the goal, not obsess over 
+        #    perfect alignment. It can fix the angle while moving.
+        
+        # - w_dist
+        #    Main driver to get to the target.
+
+        # - w_vel
+        #    Heavily reward moving forward to break the "stop-and-go" cycle.
+        
+        # - w_yaw_damping
+        #    Penalize high yaw rates. This acts like a "damper" to prevent 
+        #    oscillating left/right. It prefers smooth turns over jerky ones.
+
         for i, traj in enumerate(trajectories):
+            # Hard collision check
             if collision_mask[i]:
-                scores.append(float('inf'))  # High cost for collision trajectories (Already considers obstacles)
+                scores.append(float('inf'))
                 continue
 
-            # Distance to goal at the end of trajectory
+            # Minimum distance
+            min_obs_dist = float('inf')
+
+            for point in traj:
+                px, py, pz, _ = point
+                for obs in obstacles:
+                    ox, oy = obs
+                    distance = math.sqrt((px - ox) ** 2 + (py - oy) ** 2)
+                    if distance < min_obs_dist:
+                        min_obs_dist = distance
+            
+            lethal_dist = 1.0
+            inflation_radius = 4.0
+            max_cost = 100.0  # Max penalty before it becomes 'infinite'
+
+            # 2. CALCULATE COST
+            if min_obs_dist <= lethal_dist:
+                # Inside the collision zone -> Infinite Cost
+                obs_cost = float('inf')
+            
+            elif min_obs_dist < inflation_radius:
+                # LINEAR INTERPOLATION
+                # Create a ramp from 0.0 (at inflation_radius) to max_cost (at lethal_dist)
+                # Formula: Cost = Max * ( (Inflation - Dist) / (Inflation - Lethal) )
+                
+                factor = (inflation_radius - min_obs_dist) / (inflation_radius - lethal_dist)
+                obs_cost = max_cost * factor
+                
+            else:
+                # Safe zone -> No Cost
+                obs_cost = 0.0
+
+            # State at end of trajectory
             end_point = traj[-1]
-            ex, ey, ez, end_yaw = end_point
-            goal_weight = 0.05
-            goal_distance = math.sqrt((ex - goal[0]) ** 2 + (ey - goal[1]) ** 2)
+            ex, ey, _, end_yaw = end_point
+            
+            # --- 1. Calculate Raw Metrics ---
+            
+            # Distance to goal
+            dist_score = math.sqrt((ex - goal[0]) ** 2 + (ey - goal[1]) ** 2)
 
-            # Heading to goal
+            # Heading Error (Angle difference)
             goal_heading = math.degrees(math.atan2(goal[1] - ey, goal[0] - ex))
-            heading_error = abs((end_yaw - goal_heading + 180) % 360 - 180)  # Shortest angle difference
+            heading_error = abs((end_yaw - goal_heading + 180) % 360 - 180)
+            
+            # Velocity and Yaw Rate from candidate
+            forward_vel = candidates[i]['forward_m_s']
+            yaw_rate = abs(candidates[i]['yawspeed_deg_s'])
 
-            # Optional: Speed
+            if dist_score < 3.0:
+                # PARKING MODE: Ignore heading, just hit the point
+                w_heading = 0.0
+                w_dist    = 2.0
+                w_vel     = 1.0
+                w_obs     = 5.0
+                w_yaw     = 0.1
+                print("Parking mode activated...")
 
-            # Optional: Smoothness
-            beta = 2.0 # Weight for smoothness (Increase for smoothness, decrease for sharper turns)
-            smoothness_score = 0
-            for j in range(1, len(traj)):
-                prev_yaw = traj[j-1][3]
-                curr_yaw = traj[j][3]
-                smoothness_score += abs(curr_yaw - prev_yaw)
-            smoothness_score *= beta
+            # --- 2. Adaptive Weighting (The Fix) ---
+            # If we are facing the wrong way (>45 deg), SWAP priorities.
+            # Mode A: "Turn in Place" Mode
+            
+            # elif heading_error > 90.0:
+            #     w_heading = 2.0     # High priority on fixing angle
+            #     w_dist    = 0.1     # Don't worry about distance yet
+            #     w_vel     = 0.0     # Don't try to move forward
+            #     w_yaw     = 0.01    # No penalty for turning fast
+            #     w_obs     = 2.0     # Don't hit anything whilst turning
+            #     print(f"Correcting heading: {heading_error:.1f} deg")
+            
+            # Mode B: "Drive" Mode
+            else:
+                w_heading = 1.5     # Maintain course
+                w_dist    = 0.75     # Go to goal
+                w_vel     = 0.5     # Reward speed
+                w_yaw     = 2.0     # Small penalty to prevent oscillation
+                w_obs     = 20.0    # Avoid obstacles seriously
+                # print("Driving towards goal...")
 
-            gamma = 3.0
-            score = (goal_weight * goal_distance) + smoothness_score + (gamma * heading_error)  # + other criteria
+            # --- 3. Calculate Final Score ---
+            # Note: We use -forward_vel so higher velocity = lower cost
+            # (w_heading * heading_error) + \
+            # (w_yaw * yaw_rate) + \
+            score = (w_dist * dist_score) + \
+                    (w_vel * (12.0 - forward_vel)) + \
+                    (w_obs * obs_cost)
+            
             scores.append(score)
+            
         return scores
     
     def choose_best_trajectory(self, scores, trajectories):
@@ -270,7 +346,7 @@ class DynamicWindowApproachPlanner:
         min_index = np.argmin(scores)
         return trajectories[min_index]
     
-    async def run_dwa_loop(self, goal, dt=0.1, stop_distance=1.0):
+    async def run_dwa_loop(self, goal, dt=0.1, stop_distance=1.5):
         """Main DWA loop to be called periodically
         Inputs:
         - Goal position
@@ -280,8 +356,8 @@ class DynamicWindowApproachPlanner:
         - No return value
         """
 
-        # plt.ion()
-        # fig, ax = plt.subplots(figsize=(8, 8))
+        # viz = DWAVisualizer() # Initialize Visualizer
+        # frame = 0
 
         while True:
             # 1. Get current state (position, yaw, etc)
@@ -295,24 +371,28 @@ class DynamicWindowApproachPlanner:
             print(f"Current State: x={state[0]:.2f}, y={state[1]:.2f}, z={state[2]:.2f}, yaw={state[3]:.2f}, x_vel={state[4]:.2f}, y_vel={state[5]:.2f}, z_vel={state[6]:.2f}, yaw_rate={state[7]:.2f}")
 
             # 2. Get latest obstacles from LiDAR
-            # obstacles = self.get_obstacles()
+            #obstacles = self.get_obstacles()
             obstacles = self.get_obstacles_world((state[0], state[1], state[3]))
 
             # 3. Sample velocities
             candidates = self.sample_velocities(current_forward_vel=state[4], current_yaw_rate=state[7], dt=dt)
 
             # 4. Predict trajectories
-            trajectories = self.trajectory_prediction(current_state=state[:4], candidates=candidates, time_horizon=5.0, dt=dt)
+            trajectories = self.trajectory_prediction(current_state=state[:4], candidates=candidates, time_horizon=4.0, dt=dt)
 
             # 5. Collision checking
-            collision_mask = self.collision_checking(trajectories, obstacles, safety_distance=0.25)
+            collision_mask = self.collision_checking(trajectories, obstacles, safety_distance=0.8)
 
             # 6. Trajectory scoring
-            scores = self.trajectory_scoring(goal, collision_mask, trajectories)
+            scores = self.trajectory_scoring(goal, collision_mask, trajectories, candidates, obstacles)
 
             # 7. Choose best trajectory
             best_idx = np.argmin(scores)
             best_candidate = candidates[best_idx]
+
+            # frame += 1
+            # if frame % 5 == 0:
+            #     viz.render(state, goal, obstacles, trajectories, collision_mask, best_idx)
 
             # 8. Stop if all in collision
             if all(collision_mask):
@@ -337,36 +417,6 @@ class DynamicWindowApproachPlanner:
                 break
 
             await asyncio.sleep(dt)
-
-            # # Clear previous plot
-            # ax.clear()
-
-            # # Plot obstacles
-            # if obstacles:
-            #     obs_xs = [o[0] for o in obstacles]
-            #     obs_ys = [o[1] for o in obstacles]
-            #     ax.scatter(obs_xs, obs_ys, c='blue', s=30, label='Obstacles')
-
-            # # Plot trajectories
-            # for traj, in_collision in zip(trajectories, collision_mask):
-            #     xs = [pt[0] for pt in traj]
-            #     ys = [pt[1] for pt in traj]
-            #     color = 'red' if in_collision else 'green'
-            #     ax.plot(xs, ys, color=color, alpha=0.7)
-
-            # # Plot drone position
-            # ax.scatter([state[0]], [state[1]], c='magenta', s=80, label='Drone')
-
-            # # Plot goal
-            # ax.scatter([goal_local[0]], [goal_local[1]], c='gold', s=80, marker='*', label='Goal')
-
-            # ax.set_title("DWA Real-Time Trajectory Visualization")
-            # ax.set_xlabel("X (meters)")
-            # ax.set_ylabel("Y (meters)")
-            # ax.axis('equal')
-            # ax.grid(True)
-            # ax.legend()
-            # plt.pause(0.01)
 
     async def connect_drone(self):
         """Connect to the drone using MAVSDK"""
