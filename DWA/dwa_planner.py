@@ -8,6 +8,7 @@ import time
 import math
 from mavsdk import System
 from mavsdk.offboard import VelocityBodyYawspeed
+import matplotlib.pyplot as plt
 try:
     import gz.transport13 as gz_transport
 except ImportError:
@@ -48,15 +49,24 @@ class DynamicWindowApproachPlanner:
         # print(f"Sampling velocities: Forward [{min_forward:.1f}, {max_forward:.1f}] m/s, Yaw [{min_yaw:.1f}, {max_yaw:.1f}] deg/s")
 
         # Sample forward velocities (np.arange for float steps, linspace for fixed number of samples)
-        for forward_vel in np.linspace(min_forward, max_forward, 7):
+        for forward_vel in np.linspace(min_forward, max_forward, 6):
             # Sample yaw rates
-            for yaw_rate in np.linspace(min_yaw, max_yaw, 7):
+            for yaw_rate in np.linspace(min_yaw, max_yaw, 6):
                 candidates.append({
                     'forward_m_s': forward_vel,
                     'right_m_s': 0.0,
                     'down_m_s': 0.0,
                     'yawspeed_deg_s': yaw_rate
                 })
+
+        # Include stopping as an option
+        candidates.append({
+            'forward_m_s': 0.0,
+            'right_m_s': 0.0,
+            'down_m_s': 0.0,
+            'yawspeed_deg_s': 0.0
+        })
+
         return candidates
 
     def sample_full_4d_velocities(self):
@@ -161,6 +171,20 @@ class DynamicWindowApproachPlanner:
             cartesian_obstacles.append((x, y))
 
         return cartesian_obstacles
+    
+    def get_obstacles_world(self, drone_pose):
+        """
+        Convert local LiDAR points to world frame.
+        drone_pose: (x, y, yaw) in world frame
+        """
+        x_drone, y_drone, yaw_drone = drone_pose
+        obstacles_local = self.get_obstacles()
+        obstacles_world = []
+        for x_local, y_local in obstacles_local:
+            x_world = x_drone + x_local * math.cos(math.radians(yaw_drone)) - y_local * math.sin(math.radians(yaw_drone))
+            y_world = y_drone + x_local * math.sin(math.radians(yaw_drone)) + y_local * math.cos(math.radians(yaw_drone))
+            obstacles_world.append((x_world, y_world))
+        return obstacles_world
 
     def get_latest_scan(self):
         if self.latest_scan is None:
@@ -217,22 +241,27 @@ class DynamicWindowApproachPlanner:
 
             # Distance to goal at the end of trajectory
             end_point = traj[-1]
-            ex, ey, ez, _ = end_point
+            ex, ey, ez, end_yaw = end_point
+            goal_weight = 0.05
             goal_distance = math.sqrt((ex - goal[0]) ** 2 + (ey - goal[1]) ** 2)
+
+            # Heading to goal
+            goal_heading = math.degrees(math.atan2(goal[1] - ey, goal[0] - ex))
+            heading_error = abs((end_yaw - goal_heading + 180) % 360 - 180)  # Shortest angle difference
 
             # Optional: Speed
 
-
             # Optional: Smoothness
-            beta = 1 # Weight for smoothness (Increase for smoothness, decrease for sharper turns)
+            beta = 2.0 # Weight for smoothness (Increase for smoothness, decrease for sharper turns)
             smoothness_score = 0
-            for i in range(1, len(traj)):
-                prev_yaw = traj[i-1][3]
-                curr_yaw = traj[i][3]
+            for j in range(1, len(traj)):
+                prev_yaw = traj[j-1][3]
+                curr_yaw = traj[j][3]
                 smoothness_score += abs(curr_yaw - prev_yaw)
             smoothness_score *= beta
-            
-            score = goal_distance + smoothness_score  # + other criteria
+
+            gamma = 3.0
+            score = (goal_weight * goal_distance) + smoothness_score + (gamma * heading_error)  # + other criteria
             scores.append(score)
         return scores
     
@@ -241,7 +270,7 @@ class DynamicWindowApproachPlanner:
         min_index = np.argmin(scores)
         return trajectories[min_index]
     
-    async def run_dwa_loop(self, goal, dt=0.1, stop_distance=0.5):
+    async def run_dwa_loop(self, goal, dt=0.1, stop_distance=1.0):
         """Main DWA loop to be called periodically
         Inputs:
         - Goal position
@@ -250,6 +279,10 @@ class DynamicWindowApproachPlanner:
         Outputs:
         - No return value
         """
+
+        # plt.ion()
+        # fig, ax = plt.subplots(figsize=(8, 8))
+
         while True:
             # 1. Get current state (position, yaw, etc)
             state = await self.get_current_state()
@@ -259,29 +292,81 @@ class DynamicWindowApproachPlanner:
                 await asyncio.sleep(dt)
                 continue
 
-            # print(f"Current State: x={state[0]:.2f}, y={state[1]:.2f}, z={state[2]:.2f}, yaw={state[3]:.2f}")
+            print(f"Current State: x={state[0]:.2f}, y={state[1]:.2f}, z={state[2]:.2f}, yaw={state[3]:.2f}, x_vel={state[4]:.2f}, y_vel={state[5]:.2f}, z_vel={state[6]:.2f}, yaw_rate={state[7]:.2f}")
 
             # 2. Get latest obstacles from LiDAR
-            obstacles = self.get_obstacles()
+            # obstacles = self.get_obstacles()
+            obstacles = self.get_obstacles_world((state[0], state[1], state[3]))
 
             # 3. Sample velocities
-            
+            candidates = self.sample_velocities(current_forward_vel=state[4], current_yaw_rate=state[7], dt=dt)
 
             # 4. Predict trajectories
+            trajectories = self.trajectory_prediction(current_state=state[:4], candidates=candidates, time_horizon=5.0, dt=dt)
 
             # 5. Collision checking
+            collision_mask = self.collision_checking(trajectories, obstacles, safety_distance=0.25)
 
             # 6. Trajectory scoring
+            scores = self.trajectory_scoring(goal, collision_mask, trajectories)
 
             # 7. Choose best trajectory
+            best_idx = np.argmin(scores)
+            best_candidate = candidates[best_idx]
 
             # 8. Stop if all in collision
+            if all(collision_mask):
+                print("All trajectories in collision, stopping.")
+                await self.drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
+                break
 
             # 9. Send velocity command
+            await self.drone.offboard.set_velocity_body(
+                VelocityBodyYawspeed(
+                    best_candidate['forward_m_s'],
+                    best_candidate['right_m_s'],
+                    best_candidate['down_m_s'],
+                    best_candidate['yawspeed_deg_s']
+                )
+            )
 
             # 10. Check if goal reached
+            if np.linalg.norm(np.array([state[0] - goal[0], state[1] - goal[1]])) < stop_distance:
+                print("Goal reached, stopping DWA loop.")
+                await self.drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
+                break
 
             await asyncio.sleep(dt)
+
+            # # Clear previous plot
+            # ax.clear()
+
+            # # Plot obstacles
+            # if obstacles:
+            #     obs_xs = [o[0] for o in obstacles]
+            #     obs_ys = [o[1] for o in obstacles]
+            #     ax.scatter(obs_xs, obs_ys, c='blue', s=30, label='Obstacles')
+
+            # # Plot trajectories
+            # for traj, in_collision in zip(trajectories, collision_mask):
+            #     xs = [pt[0] for pt in traj]
+            #     ys = [pt[1] for pt in traj]
+            #     color = 'red' if in_collision else 'green'
+            #     ax.plot(xs, ys, color=color, alpha=0.7)
+
+            # # Plot drone position
+            # ax.scatter([state[0]], [state[1]], c='magenta', s=80, label='Drone')
+
+            # # Plot goal
+            # ax.scatter([goal_local[0]], [goal_local[1]], c='gold', s=80, marker='*', label='Goal')
+
+            # ax.set_title("DWA Real-Time Trajectory Visualization")
+            # ax.set_xlabel("X (meters)")
+            # ax.set_ylabel("Y (meters)")
+            # ax.axis('equal')
+            # ax.grid(True)
+            # ax.legend()
+            # plt.pause(0.01)
 
     async def connect_drone(self):
         """Connect to the drone using MAVSDK"""
@@ -325,11 +410,19 @@ class DynamicWindowApproachPlanner:
                 y_vel = position.velocity_body.y_m_s
                 z_vel = position.velocity_body.z_m_s
                 yaw_rate = position.angular_velocity_body.yaw_rad_s * (180.0 / math.pi)  # Convert to deg/s
+                # Extract yaw from quaternion
+                w = position.q.w  # [w, x, y, z]
+                xq = position.q.x
+                yq = position.q.y
+                zq = position.q.z
+                siny_cosp = 2 * (w * zq + xq * yq)
+                cosy_cosp = 1 - 2 * (yq * yq + zq * zq)
+                yaw = math.atan2(siny_cosp, cosy_cosp) * (180.0 / math.pi)
                 break
             # Get heading
-            async for heading in self.drone.telemetry.heading():
-                yaw = heading.heading_deg
-                break
+            # async for heading in self.drone.telemetry.heading():
+            #     yaw = heading.heading_deg
+            #     break
 
             return [x, y, z, yaw, x_vel, y_vel, z_vel, yaw_rate]
         except Exception as e:
