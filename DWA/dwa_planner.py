@@ -34,7 +34,7 @@ class DynamicWindowApproachPlanner:
 
         # The x500 max accelerations are found in px4 parameters
         max_hor_accel = 5.0  # m/s^2 (MPC_ACC_HOR_MAX)
-        max_yaw_accel = 300.0 # deg/s^2 (MPC_YAWRAUTO_ACC was 20)
+        max_yaw_accel = 20.0 # deg/s^2 (MPC_YAWRAUTO_ACC was 20)
 
         # Calculate reachable velocity ranges (How much it can change in 0.1s)
         max_forward_change = max_hor_accel * dt
@@ -60,13 +60,13 @@ class DynamicWindowApproachPlanner:
                     'yawspeed_deg_s': yaw_rate
                 })
 
-        for rot in [-45, -30, -15, 15, 30, 45]:
-            candidates.append({
-                'forward_m_s': 0.0,
-                'right_m_s': 0.0,
-                'down_m_s': 0.0,
-                'yawspeed_deg_s': rot
-            })
+        # for rot in [-45, -30, -15, 15, 30, 45]:
+        #     candidates.append({
+        #         'forward_m_s': 0.0,
+        #         'right_m_s': 0.0,
+        #         'down_m_s': 0.0,
+        #         'yawspeed_deg_s': rot
+        #     })
 
         return candidates
 
@@ -223,26 +223,15 @@ class DynamicWindowApproachPlanner:
 
     def trajectory_scoring(self, goal, collision_mask, trajectories, candidates, obstacles):
         """
-        Modified Scoring Function:
-        1. HEADING: Penalty for not facing goal (Low Weight)
-        2. DIST: Penalty for distance to goal (High Weight)
-        3. VELOCITY: Reward for high speed (prevents baby steps)
+        Ground up scoring
         """
         scores = []
-        
-        # - w_heading
-        #    We want the drone to drive roughly towards the goal, not obsess over 
-        #    perfect alignment. It can fix the angle while moving.
-        
-        # - w_dist
-        #    Main driver to get to the target.
 
-        # - w_vel
-        #    Heavily reward moving forward to break the "stop-and-go" cycle.
-        
-        # - w_yaw_damping
-        #    Penalize high yaw rates. This acts like a "damper" to prevent 
-        #    oscillating left/right. It prefers smooth turns over jerky ones.
+        w_heading = 0.5     # Maintain course
+        w_dist    = 0.75    # Go to goal
+        w_vel     = 0.5     # Reward speed
+        w_yaw     = 2.0     # Small penalty to prevent oscillation
+        w_obs     = 10.0    # Avoid obstacles seriously
 
         for i, traj in enumerate(trajectories):
             # Hard collision check
@@ -260,27 +249,6 @@ class DynamicWindowApproachPlanner:
                     distance = math.sqrt((px - ox) ** 2 + (py - oy) ** 2)
                     if distance < min_obs_dist:
                         min_obs_dist = distance
-            
-            lethal_dist = 1.0
-            inflation_radius = 4.0
-            max_cost = 100.0  # Max penalty before it becomes 'infinite'
-
-            # 2. CALCULATE COST
-            if min_obs_dist <= lethal_dist:
-                # Inside the collision zone -> Infinite Cost
-                obs_cost = float('inf')
-            
-            elif min_obs_dist < inflation_radius:
-                # LINEAR INTERPOLATION
-                # Create a ramp from 0.0 (at inflation_radius) to max_cost (at lethal_dist)
-                # Formula: Cost = Max * ( (Inflation - Dist) / (Inflation - Lethal) )
-                
-                factor = (inflation_radius - min_obs_dist) / (inflation_radius - lethal_dist)
-                obs_cost = max_cost * factor
-                
-            else:
-                # Safe zone -> No Cost
-                obs_cost = 0.0
 
             # State at end of trajectory
             end_point = traj[-1]
@@ -293,49 +261,18 @@ class DynamicWindowApproachPlanner:
 
             # Heading Error (Angle difference)
             goal_heading = math.degrees(math.atan2(goal[1] - ey, goal[0] - ex))
-            heading_error = abs((end_yaw - goal_heading + 180) % 360 - 180)
+            norm_heading_error = (abs((end_yaw - goal_heading + 180) % 360 - 180)) / 180 # [0 - 1]
             
             # Velocity and Yaw Rate from candidate
             forward_vel = candidates[i]['forward_m_s']
-            yaw_rate = abs(candidates[i]['yawspeed_deg_s'])
-
-            if dist_score < 3.0:
-                # PARKING MODE: Ignore heading, just hit the point
-                w_heading = 0.0
-                w_dist    = 2.0
-                w_vel     = 1.0
-                w_obs     = 5.0
-                w_yaw     = 0.1
-                print("Parking mode activated...")
-
-            # --- 2. Adaptive Weighting (The Fix) ---
-            # If we are facing the wrong way (>45 deg), SWAP priorities.
-            # Mode A: "Turn in Place" Mode
-            
-            # elif heading_error > 90.0:
-            #     w_heading = 2.0     # High priority on fixing angle
-            #     w_dist    = 0.1     # Don't worry about distance yet
-            #     w_vel     = 0.0     # Don't try to move forward
-            #     w_yaw     = 0.01    # No penalty for turning fast
-            #     w_obs     = 2.0     # Don't hit anything whilst turning
-            #     print(f"Correcting heading: {heading_error:.1f} deg")
-            
-            # Mode B: "Drive" Mode
-            else:
-                w_heading = 1.5     # Maintain course
-                w_dist    = 0.75     # Go to goal
-                w_vel     = 0.5     # Reward speed
-                w_yaw     = 2.0     # Small penalty to prevent oscillation
-                w_obs     = 20.0    # Avoid obstacles seriously
-                # print("Driving towards goal...")
-
-            # --- 3. Calculate Final Score ---
-            # Note: We use -forward_vel so higher velocity = lower cost
-            # (w_heading * heading_error) + \
+            norm_yaw_rate = abs(candidates[i]['yawspeed_deg_s']) / 60 # [0 - 1] (Divided by max rate)
+            # (w_heading * norm_heading_error) + \
             # (w_yaw * yaw_rate) + \
             score = (w_dist * dist_score) + \
                     (w_vel * (12.0 - forward_vel)) + \
-                    (w_obs * obs_cost)
+                    (w_obs * min_obs_dist**-1) + \
+                    (w_yaw * norm_yaw_rate) + \
+                    (w_heading * norm_heading_error)
             
             scores.append(score)
             
@@ -381,7 +318,7 @@ class DynamicWindowApproachPlanner:
             trajectories = self.trajectory_prediction(current_state=state[:4], candidates=candidates, time_horizon=4.0, dt=dt)
 
             # 5. Collision checking
-            collision_mask = self.collision_checking(trajectories, obstacles, safety_distance=0.8)
+            collision_mask = self.collision_checking(trajectories, obstacles, safety_distance=0.25)
 
             # 6. Trajectory scoring
             scores = self.trajectory_scoring(goal, collision_mask, trajectories, candidates, obstacles)
