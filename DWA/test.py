@@ -155,32 +155,101 @@ def collision_check_trajectories():
                 await asyncio.sleep(1.0)
     obstacles = asyncio.run(wait_for_scan())
     
-    collision_mask = planner.collision_checking(trajectories, obstacles, safety_distance=0.8)
+    collision_mask = planner.collision_checking(trajectories, obstacles, safety_distance=0.25)
+
+    scores = planner.trajectory_scoring((0,6), collision_mask, trajectories, candidates, obstacles)
     
-    # Matplotlib visualization
-    plt.figure(figsize=(8, 8))
-    # Plot each trajectory: green if safe, red if in collision
-    for traj, in_collision in zip(trajectories, collision_mask):
+    # Filter out infinite scores and get valid scores for color mapping
+    valid_scores = [score for score in scores if score != float('inf')]
+    finite_scores = [score for score in scores if score != float('inf')]
+    
+    if not finite_scores:
+        print("All trajectories have infinite scores!")
+        return
+    
+    # Normalize scores for color mapping (0=best/green, 1=worst/red)
+    min_score = min(finite_scores)
+    max_score = max(finite_scores)
+    score_range = max_score - min_score
+    
+    print(f"Score range: {min_score:.3f} to {max_score:.3f}")
+    print(f"Valid trajectories: {len(finite_scores)}/{len(scores)}")
+    
+    # Matplotlib visualization with colormap
+    plt.figure(figsize=(10, 8))
+    
+    # Create colormap (green = low score/good, red = high score/bad)
+    import matplotlib.cm as cm
+    import numpy as np
+    
+    # Plot each trajectory with color based on score
+    for i, (traj, score) in enumerate(zip(trajectories, scores)):
         xs = [pt[0] for pt in traj]
         ys = [pt[1] for pt in traj]
-        color = 'red' if in_collision else 'green'
-        plt.plot(xs, ys, color=color, alpha=0.7)
+        
+        if score == float('inf'):
+            # Plot collision trajectories in black
+            color = 'black'
+            alpha = 0.3
+            linewidth = 0.5
+        else:
+            # Normalize score to 0-1 range
+            if score_range > 0:
+                normalized_score = (score - min_score) / score_range
+            else:
+                normalized_score = 0.0
+            
+            # Use RdYlGn_r colormap (reversed so green=good, red=bad)
+            color = cm.RdYlGn_r(normalized_score)
+            alpha = 0.8
+            linewidth = 1.0
+            
+        plt.plot(xs, ys, color=color, alpha=alpha, linewidth=linewidth)
     
     # Plot obstacles
     if obstacles:
         obs_xs = [o[0] for o in obstacles]
         obs_ys = [o[1] for o in obstacles]
-        plt.scatter(obs_xs, obs_ys, c='blue', s=30, label='Obstacles')
+        plt.scatter(obs_xs, obs_ys, c='blue', s=30, label='Obstacles', zorder=5)
     
     # Plot drone start position
-    plt.scatter([current_state[0]], [current_state[1]], c='magenta', s=80, label='Start')
-    plt.title("DWA Trajectories: Green=Safe, Red=Collision")
+    plt.scatter([current_state[0]], [current_state[1]], c='magenta', s=100, 
+                marker='o', label='Start', zorder=5)
+    
+    # Plot goal
+    plt.scatter([6], [0], c='gold', s=100, marker='*', label='Goal', zorder=5)
+    
+    # Find and highlight best trajectory
+    if finite_scores:
+        best_idx = scores.index(min(finite_scores))
+        best_traj = trajectories[best_idx]
+        xs = [pt[0] for pt in best_traj]
+        ys = [pt[1] for pt in best_traj]
+        plt.plot(xs, ys, color='lime', linewidth=3, alpha=1.0, label='Best Trajectory')
+    
+    plt.title("DWA Trajectories: Color-coded by Score\n(Green=Low Score/Good, Red=High Score/Bad, Black=Collision)")
     plt.xlabel("X (meters)")
     plt.ylabel("Y (meters)")
     plt.axis('equal')
-    plt.grid(True)
+    plt.grid(True, alpha=0.3)
     plt.legend()
+    
+    # Add colorbar to show score mapping
+    if finite_scores and score_range > 0:
+        sm = plt.cm.ScalarMappable(cmap=cm.RdYlGn_r, 
+                                   norm=plt.Normalize(vmin=min_score, vmax=max_score))
+        sm.set_array([])
+        cbar = plt.colorbar(sm, ax=plt.gca())
+        cbar.set_label('Trajectory Score')
+    
+    plt.tight_layout()
     plt.show()
+    
+    # Print some statistics
+    print(f"\nBest score: {min(finite_scores):.3f}")
+    print(f"Worst finite score: {max(finite_scores):.3f}")
+    if finite_scores:
+        print(f"Best trajectory candidate: {candidates[scores.index(min(finite_scores))]}")
     
 def test_current_state():
     planner = DynamicWindowApproachPlanner()
@@ -196,9 +265,13 @@ def test_current_state():
             await asyncio.sleep(2.0)
     asyncio.run(print_state())
 
+async def latency_check(planner):
+    await planner.connect_drone()
+    await planner.test_gazebo_state()
+
 async def main(planner):
     await planner.connect_drone()
-    await planner.run_dwa_loop(goal=(0, 6), dt=0.1, stop_distance=1)
+    await planner.run_dwa_loop(goal=(0, -6), dt=0.1, stop_distance=1)
 
 if __name__ == "__main__":
     # test_velocity_sampler()
@@ -209,3 +282,4 @@ if __name__ == "__main__":
     # test_current_state()
     planner = DynamicWindowApproachPlanner()
     asyncio.run(main(planner))
+    # asyncio.run(latency_check(planner))
