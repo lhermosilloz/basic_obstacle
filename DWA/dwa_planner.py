@@ -108,6 +108,49 @@ class DynamicWindowApproachPlanner:
             trajectories.append(traj)
         return trajectories
     
+    def trajectory_prediction_vectorized(self, current_state, candidates, time_horizon=2.0, dt=0.1):
+        """Vectorized trajectory prediction using numpy for 10-100x speedup"""
+        num_steps = int(time_horizon / dt)
+        num_candidates = len(candidates)
+        
+        # Convert candidates to numpy arrays
+        forward_vels = np.array([cmd['forward_m_s'] for cmd in candidates])
+        right_vels = np.array([cmd['right_m_s'] for cmd in candidates])
+        down_vels = np.array([cmd['down_m_s'] for cmd in candidates])
+        yaw_rates = np.array([cmd['yawspeed_deg_s'] for cmd in candidates])
+        
+        # Initialize state arrays
+        x = np.full(num_candidates, current_state[0], dtype=np.float32)
+        y = np.full(num_candidates, current_state[1], dtype=np.float32)
+        z = np.full(num_candidates, current_state[2], dtype=np.float32)
+        yaw = np.full(num_candidates, current_state[3], dtype=np.float32)
+        
+        # Store all trajectories
+        trajectories = []
+        for i in range(num_candidates):
+            trajectories.append([])
+        
+        # Simulate all trajectories simultaneously
+        for step in range(num_steps):
+            # Convert yaw to radians for all candidates at once
+            yaw_rad = np.radians(yaw)
+            
+            # Calculate global frame velocities for all candidates
+            vx = forward_vels * np.cos(yaw_rad) - right_vels * np.sin(yaw_rad)
+            vy = forward_vels * np.sin(yaw_rad) + right_vels * np.cos(yaw_rad)
+            
+            # Update positions for all candidates
+            x += vx * dt
+            y += vy * dt
+            z += down_vels * dt
+            yaw += yaw_rates * dt
+            
+            # Store current step for all trajectories
+            for i in range(num_candidates):
+                trajectories[i].append((x[i], y[i], z[i], yaw[i]))
+        
+        return trajectories
+
     def lidar_callback(self, msg):
         """Simple callback to store latest scan data"""
         self.latest_scan = msg
@@ -243,6 +286,36 @@ class DynamicWindowApproachPlanner:
         
         return collision_mask
 
+    def collision_checking_ultra_optimized(self, trajectories, obstacles, safety_distance=0.25):
+        """Ultra-optimized: Check even fewer points and use squared distances"""
+        collision_mask = []
+        
+        if not obstacles:
+            return [False] * len(trajectories)
+        
+        obs_array = np.array(obstacles)
+        safety_sq = safety_distance ** 2
+        
+        for traj in trajectories:
+            # Check only START, MIDDLE, and END points (3 points total instead of ~13)
+            check_indices = [0, len(traj)//2, -1]
+            check_points = [traj[i] for i in check_indices]
+            
+            in_collision = False
+            for point in check_points:
+                px, py = point[0], point[1]
+                
+                # Vectorized squared distance (no sqrt needed)
+                distances_sq = (obs_array[:, 0] - px) ** 2 + (obs_array[:, 1] - py) ** 2
+                
+                if np.any(distances_sq < safety_sq):
+                    in_collision = True
+                    break
+                    
+            collision_mask.append(in_collision)
+        
+        return collision_mask
+
     def trajectory_scoring(self, goal, collision_mask, trajectories, candidates, obstacles):
         """
         Ground up scoring
@@ -332,6 +405,34 @@ class DynamicWindowApproachPlanner:
             
         return scores
 
+    def trajectory_scoring_ultra_fast(self, goal, collision_mask, trajectories, candidates, obstacles):
+        """Ultra-fast scoring: minimal calculations, vectorized where possible"""
+        scores = []
+        
+        # Pre-calculate goal position once
+        goal_x, goal_y = goal[0], goal[1]
+        
+        for i, traj in enumerate(trajectories):
+            if collision_mask[i]:
+                scores.append(float('inf'))
+                continue
+
+            # Only use END point for all calculations
+            end_point = traj[-1]
+            ex, ey = end_point[0], end_point[1]
+            
+            # Simple distance to goal (no sqrt needed for comparison)
+            dist_score_sq = (ex - goal_x) ** 2 + (ey - goal_y) ** 2
+            
+            # Simple speed reward (no obstacle distance calculation)
+            forward_vel = candidates[i]['forward_m_s']
+            
+            # Ultra-simple scoring (remove obstacle cost for speed)
+            score = dist_score_sq - (forward_vel * 2.0)  # Heavily favor speed (No work because neglects obstacles)
+            scores.append(score)
+            
+        return scores
+
     def choose_best_trajectory(self, scores, trajectories):
         """Choose the trajectory with the lowest score"""
         min_index = np.argmin(scores)
@@ -362,9 +463,6 @@ class DynamicWindowApproachPlanner:
                 await asyncio.sleep(dt)
                 continue
 
-            # print(f"Current State: x={state[0]:.2f}, y={state[1]:.2f}, z={state[2]:.2f}, yaw={state[3]:.2f}, x_vel={state[4]:.2f}, y_vel={state[5]:.2f}, z_vel={state[6]:.2f}, yaw_rate={state[7]:.2f}")
-
-
             # 2. Get latest obstacles from LiDAR
             step_start = time.time()
             obstacles = self.get_obstacles_world((state[0], state[1], state[3]))
@@ -377,12 +475,12 @@ class DynamicWindowApproachPlanner:
 
             # 4. Predict trajectories
             step_start = time.time()
-            trajectories = self.trajectory_prediction(current_state=state[:4], candidates=candidates, time_horizon=4.0, dt=dt)
+            trajectories = self.trajectory_prediction_vectorized(current_state=state[:4], candidates=candidates, time_horizon=4.0, dt=dt)
             get_trajectory_time = time.time() - step_start
 
             # 5. Collision checking
             step_start = time.time()
-            collision_mask = self.collision_checking_optimized(trajectories, obstacles, safety_distance=0.25)
+            collision_mask = self.collision_checking_ultra_optimized(trajectories, obstacles, safety_distance=0.25)
             get_collision_time = time.time() - step_start
 
             # 6. Trajectory scoring
@@ -438,6 +536,7 @@ class DynamicWindowApproachPlanner:
                 await self.drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
                 break
 
+            # Compensate for the 100 ms loop time with the rest it should wait
             await asyncio.sleep(dt - total_loop_time)
 
     async def connect_drone(self):
@@ -491,10 +590,6 @@ class DynamicWindowApproachPlanner:
                 cosy_cosp = 1 - 2 * (yq * yq + zq * zq)
                 yaw = math.atan2(siny_cosp, cosy_cosp) * (180.0 / math.pi)
                 break
-            # Get heading
-            # async for heading in self.drone.telemetry.heading():
-            #     yaw = heading.heading_deg
-            #     break
 
             return [x, y, z, yaw, x_vel, y_vel, z_vel, yaw_rate]
         except Exception as e:
@@ -515,8 +610,8 @@ class DynamicWindowApproachPlanner:
             # Linear interpolation between lethal_dist and inflation_radius
             return max_cost * ((inflation_radius - min_obs_dist) / (inflation_radius - lethal_dist))
         
-    # This function helped me figure out that calling the get_current_state() from Gazebo roughly takes like 30 ms
     async def test_gazebo_state(self):
+        """This function helped me figure out that calling the get_current_state() from Gazebo roughly takes like 30 ms"""
         last_time = time.time()
         iteration = 0
         
