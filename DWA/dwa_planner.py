@@ -33,16 +33,16 @@ class DynamicWindowApproachPlanner:
         candidates = []
 
         # The x500 max accelerations are found in px4 parameters
-        max_hor_accel = 5.0  # m/s^2 (MPC_ACC_HOR_MAX)
-        max_yaw_accel = 150.0 # deg/s^2 (MPC_YAWRAUTO_ACC was 20)
+        max_hor_accel = 5.0  # m/s^2 (MPC_ACC_HOR_MAX was 5)
+        max_yaw_accel = 60.0 # deg/s^2 (MPC_YAWRAUTO_ACC was 20)
 
         # Calculate reachable velocity ranges (How much it can change in 0.1s)
         max_forward_change = max_hor_accel * dt
         max_yaw_change = max_yaw_accel * dt
 
         # Reachable forward velocity range
-        min_forward = max(0.1, current_forward_vel - max_forward_change)
-        max_forward = min(12.0, current_forward_vel + max_forward_change)    # MPC_XY_VEL_MAX
+        min_forward = max(0.0, current_forward_vel - max_forward_change)
+        max_forward = min(12.0, current_forward_vel + max_forward_change)    # MPC_XY_VEL_MAX / MPC_XY_CRUISE
 
         # Reachable yaw rate range
         min_yaw = max(-60.0, current_yaw_rate - max_yaw_change) # MPC_YAWRAUTO_MAX (was 60)
@@ -51,7 +51,7 @@ class DynamicWindowApproachPlanner:
         # Sample forward velocities (np.arange for float steps, linspace for fixed number of samples)
         for forward_vel in np.linspace(min_forward, max_forward, 8):
             # Sample yaw rates
-            for yaw_rate in np.linspace(min_yaw, max_yaw, 10):
+            for yaw_rate in np.linspace(min_yaw, max_yaw, 8):
                 candidates.append({
                     'forward_m_s': forward_vel,
                     'right_m_s': 0.0,
@@ -364,7 +364,9 @@ class DynamicWindowApproachPlanner:
             
             score = (w_dist * dist_score) + \
                     (-w_vel * forward_vel) + \
-                    (w_obs * self.smooth_obstacle_cost(min_obs_dist))
+                    (w_obs * self.smooth_obstacle_cost(min_obs_dist)) + \
+                    (w_yaw * norm_yaw_rate) + \
+                    (w_heading * norm_heading_error)
             
             scores.append(score)
             
@@ -399,8 +401,10 @@ class DynamicWindowApproachPlanner:
             # Rest of scoring (simplified)
             dist_score = math.sqrt((ex - goal[0]) ** 2 + (ey - goal[1]) ** 2)
             forward_vel = candidates[i]['forward_m_s']
+            # Normalized Yaw Rate (0.0 to 1.0)
+            norm_yaw_rate = abs(candidates[i]['yawspeed_deg_s']) / 60.0
             
-            score = 0.25 * dist_score + (-0.5 * forward_vel) + (0.2 * self.smooth_obstacle_cost(min_obs_dist))
+            score = 2.0 * dist_score + (-0.75 * forward_vel) + (5 / min_obs_dist) # + (0.05 * norm_yaw_rate)
             scores.append(score)
             
         return scores
@@ -475,7 +479,7 @@ class DynamicWindowApproachPlanner:
 
             # 4. Predict trajectories
             step_start = time.time()
-            trajectories = self.trajectory_prediction_vectorized(current_state=state[:4], candidates=candidates, time_horizon=4.0, dt=dt)
+            trajectories = self.trajectory_prediction_vectorized(current_state=state[:4], candidates=candidates, time_horizon=3.0, dt=dt)
             get_trajectory_time = time.time() - step_start
 
             # 5. Collision checking
@@ -515,26 +519,31 @@ class DynamicWindowApproachPlanner:
             total_loop_time = time.time() - loop_start
             
             # Print timing every 10 iterations
-            if iteration % 10 == 0:
-                print(f"\n=== DWA TIMING ITERATION {iteration} ===")
-                print(f"Get State:      {get_state_time*1000:6.1f}ms")
-                print(f"Get Obstacles:  {get_obstacles_time*1000:6.1f}ms")
-                print(f"Sample Vels:    {get_sample_vel_time*1000:6.1f}ms")
-                print(f"Predict Trajs:  {get_trajectory_time*1000:6.1f}ms")
-                print(f"Collision Chk:  {get_collision_time*1000:6.1f}ms")
-                print(f"Scoring:        {get_scoring_time*1000:6.1f}ms")
-                print(f"Selection:      {get_best_trajectory_time*1000:6.1f}ms")
-                print(f"Send Command:   {get_command_time*1000:6.1f}ms")
-                print(f"TOTAL LOOP:     {total_loop_time*1000:6.1f}ms")
-                print(f"Candidates:     {len(candidates)}")
-                print(f"Obstacles:      {len(obstacles)}")
-                print(f"=====================================")
+            # if iteration % 10 == 0:
+            #     print(f"\n=== DWA TIMING ITERATION {iteration} ===")
+            #     print(f"Get State:      {get_state_time*1000:6.1f}ms")
+            #     print(f"Get Obstacles:  {get_obstacles_time*1000:6.1f}ms")
+            #     print(f"Sample Vels:    {get_sample_vel_time*1000:6.1f}ms")
+            #     print(f"Predict Trajs:  {get_trajectory_time*1000:6.1f}ms")
+            #     print(f"Collision Chk:  {get_collision_time*1000:6.1f}ms")
+            #     print(f"Scoring:        {get_scoring_time*1000:6.1f}ms")
+            #     print(f"Selection:      {get_best_trajectory_time*1000:6.1f}ms")
+            #     print(f"Send Command:   {get_command_time*1000:6.1f}ms")
+            #     print(f"TOTAL LOOP:     {total_loop_time*1000:6.1f}ms")
+            #     print(f"Candidates:     {len(candidates)}")
+            #     print(f"Obstacles:      {len(obstacles)}")
+            #     print(f"=====================================")
 
             # 10. Check if goal reached
             if np.linalg.norm(np.array([state[0] - goal[0], state[1] - goal[1]])) < stop_distance:
                 print("Goal reached, stopping DWA loop.")
                 await self.drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
                 break
+
+            # Pring the trajectory chosen:
+            print(f"Chose forward Vel: {best_candidate['forward_m_s']:.2f} m/s, Yaw Rate: {best_candidate['yawspeed_deg_s']:.1f} deg/s")
+            # Print current state
+            print(f"Forward Vel: {state[4]:.2f} m/s, Yaw Rate: {state[7]:.1f} deg/s")
 
             # Compensate for the 100 ms loop time with the rest it should wait
             await asyncio.sleep(dt - total_loop_time)
@@ -591,16 +600,16 @@ class DynamicWindowApproachPlanner:
                 yaw = math.atan2(siny_cosp, cosy_cosp) * (180.0 / math.pi)
                 break
 
-            return [x, y, z, yaw, x_vel, y_vel, z_vel, yaw_rate]
+            return [x, y, z, yaw, abs(x_vel), y_vel, z_vel, yaw_rate]
         except Exception as e:
             print(f"Failed to get current state: {e}")
             return None
 
     def smooth_obstacle_cost(self, min_obs_dist):
         """Smooth cost function for obstacle distance"""
-        lethal_dist = 0.25      # Hard collision distance
-        inflation_radius = 2.5  # Start penalizing from this distance
-        max_cost = 2.0
+        lethal_dist = 1.0      # Hard collision distance
+        inflation_radius = 2.0  # Start penalizing from this distance
+        max_cost = 3.25 # 1.6
 
         if min_obs_dist <= lethal_dist:
             return max_cost
@@ -642,3 +651,29 @@ class DynamicWindowApproachPlanner:
             
             last_time = current_time
             await asyncio.sleep(expected_interval)
+
+    async def speed_test(self):
+        """Test how fast drone can change directions and speeds"""
+        await self.drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
+        await asyncio.sleep(2)
+
+        test_commands = [
+            VelocityBodyYawspeed(5.0, 0.0, 0.0, 0.0),
+            VelocityBodyYawspeed(0.0, 5.0, 0.0, 0.0),
+            VelocityBodyYawspeed(-5.0, 0.0, 0.0, 0.0),
+            VelocityBodyYawspeed(0.0, -5.0, 0.0, 0.0),
+            VelocityBodyYawspeed(0.0, 0.0, 0.0, 30.0),
+            VelocityBodyYawspeed(0.0, 0.0, 0.0, -30.0),
+        ]
+
+        for cmd in test_commands:
+            print(f"Sending command: Forward={cmd.forward_m_s}, Right={cmd.right_m_s}, Down={cmd.down_m_s}, YawRate={cmd.yawspeed_deg_s}")
+            for i in range(3):
+                state = await self.get_current_state()
+                print(f"  Time {i}: Forward Vel={state[4]:.2f} m/s, Right Vel={state[5]:.2f} m/s, Yaw Rate={state[7]:.1f} deg/s")
+                await self.drone.offboard.set_velocity_body(cmd)
+                await asyncio.sleep(1)
+
+        # Stop the drone
+        await self.drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
+        print("Speed test completed.")

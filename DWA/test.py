@@ -137,10 +137,10 @@ def collision_check_trajectories():
     
     # Example initial state: [x, y, z, yaw]
     current_state = [0.0, 0.0, 0.0, 0.0]  # Start at origin, facing east (yaw=0)
-    candidates = planner.sample_velocities(current_forward_vel=0.0, current_yaw_rate=0.0)
+    candidates = planner.sample_velocities(current_forward_vel=0.2, current_yaw_rate=5.0)
     
     # Predict trajectories
-    trajectories = planner.trajectory_prediction(current_state, candidates, time_horizon=4.0, dt=0.1)
+    trajectories = planner.trajectory_prediction(current_state, candidates, time_horizon=2.0, dt=0.1)
     
     # Get obstacles (in drone frame)
     obstacles = []
@@ -269,9 +269,13 @@ async def latency_check(planner):
     await planner.connect_drone()
     await planner.test_gazebo_state()
 
+async def speed_check(planner):
+    await planner.connect_drone()
+    await planner.speed_test()
+
 async def main(planner):
     await planner.connect_drone()
-    await planner.run_dwa_loop(goal=(0, -6), dt=0.1, stop_distance=1)
+    await planner.run_dwa_loop(goal=(0, 0), dt=0.1, stop_distance=1)
 
 if __name__ == "__main__":
     # test_velocity_sampler()
@@ -283,3 +287,4 @@ if __name__ == "__main__":
     planner = DynamicWindowApproachPlanner()
     asyncio.run(main(planner))
     # asyncio.run(latency_check(planner))
+    # asyncio.run(speed_check(planner))
