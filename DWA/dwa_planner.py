@@ -658,17 +658,19 @@ class DynamicWindowApproachPlanner:
         await asyncio.sleep(2)
 
         test_commands = [
+            VelocityBodyYawspeed(0.0, 0.0, 0.0, -15.0),
+            VelocityBodyYawspeed(3.0, 0.0, 0.0, 0.0),
             VelocityBodyYawspeed(5.0, 0.0, 0.0, 0.0),
             VelocityBodyYawspeed(0.0, 5.0, 0.0, 0.0),
             VelocityBodyYawspeed(-5.0, 0.0, 0.0, 0.0),
             VelocityBodyYawspeed(0.0, -5.0, 0.0, 0.0),
-            VelocityBodyYawspeed(0.0, 0.0, 0.0, 30.0),
-            VelocityBodyYawspeed(0.0, 0.0, 0.0, -30.0),
+            VelocityBodyYawspeed(0.0, 0.0, 0.0, 90.0),
+            VelocityBodyYawspeed(1.0, 0.0, 0.0, 0.0),
         ]
 
         for cmd in test_commands:
             print(f"Sending command: Forward={cmd.forward_m_s}, Right={cmd.right_m_s}, Down={cmd.down_m_s}, YawRate={cmd.yawspeed_deg_s}")
-            for i in range(3):
+            for i in range(4):
                 state = await self.get_current_state()
                 print(f"  Time {i}: Forward Vel={state[4]:.2f} m/s, Right Vel={state[5]:.2f} m/s, Yaw Rate={state[7]:.1f} deg/s")
                 await self.drone.offboard.set_velocity_body(cmd)
