@@ -583,24 +583,36 @@ class DynamicWindowApproachPlanner:
         try:
             # Get position and velocities
             async for position in self.drone.telemetry.odometry():
+                # 1. Get position & raw velocities (world frame / NED)
                 x = position.position_body.x_m
                 y = position.position_body.y_m
                 z = position.position_body.z_m
-                x_vel = position.velocity_body.x_m_s
-                y_vel = position.velocity_body.y_m_s
-                z_vel = position.velocity_body.z_m_s
+
+                # 2. Get velocities
+                x_vel = position.velocity_body.x_m_s    # North
+                y_vel = position.velocity_body.y_m_s    # East
+                z_vel = position.velocity_body.z_m_s    # Down
                 yaw_rate = position.angular_velocity_body.yaw_rad_s * (180.0 / math.pi)  # Convert to deg/s
+                
                 # Extract yaw from quaternion
                 w = position.q.w  # [w, x, y, z]
                 xq = position.q.x
                 yq = position.q.y
                 zq = position.q.z
+
+                # Get heading (yaw) in degrees
                 siny_cosp = 2 * (w * zq + xq * yq)
                 cosy_cosp = 1 - 2 * (yq * yq + zq * zq)
                 yaw = math.atan2(siny_cosp, cosy_cosp) * (180.0 / math.pi)
+
+                # Get forward velocity in body frame
+                forward_vel = (x_vel * math.cos(math.radians(yaw))) + (y_vel * math.sin(math.radians(yaw)))
+
+                # Get right velocity in body frame
+                right_vel = (-x_vel * math.sin(math.radians(yaw))) + (y_vel * math.cos(math.radians(yaw)))
                 break
 
-            return [x, y, z, yaw, abs(x_vel), y_vel, z_vel, yaw_rate]
+            return [x, y, z, yaw, forward_vel, right_vel, z_vel, yaw_rate]
         except Exception as e:
             print(f"Failed to get current state: {e}")
             return None
