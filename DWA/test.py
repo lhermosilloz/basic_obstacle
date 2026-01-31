@@ -132,7 +132,7 @@ def test_scanner():
                 await asyncio.sleep(1.0)
     asyncio.run(wait_for_scan())
 
-def collision_check_trajectories(horizon=3.0, w_dist=2.0, w_vel=-0.5, w_obs=6.0):
+def collision_check_trajectories(horizon=3.0, w_dist=2.0, w_vel=-0.5, w_obs=1.0):
     planner = DynamicWindowApproachPlanner(w_dist, w_vel, w_obs)
     
     # Obstacles remain the same
@@ -292,7 +292,7 @@ async def main(planner):
     await planner.connect_drone()
     await planner.run_dwa_loop(goal=(10, 0), dt=0.1, stop_distance=1)
 
-def collision_check_diff_speed_trajectories(horizon=3.0, w_dist=2.0, w_vel=-0.5, w_obs=6.0):
+def collision_check_diff_speed_trajectories(horizon=3.0, w_dist=2.0, w_vel=-0.5, w_obs=1.0):
     planner = DynamicWindowApproachPlanner(w_dist, w_vel, w_obs)
     
     # Get obstacles (in drone frame)
@@ -445,9 +445,9 @@ if __name__ == "__main__":
     # visualize_velocity_space()
     # test_scanner()
     # collision_check_trajectories()
-    # collision_check_diff_speed_trajectories(3.0, 2.0, -0.5, 6.0)
+    collision_check_diff_speed_trajectories(3.0, 2.0, -0.5, 1.0)
     # test_current_state()
-    planner = DynamicWindowApproachPlanner(2.0, -0.5, 6.0)
-    asyncio.run(main(planner))
+    # planner = DynamicWindowApproachPlanner(2.0, -0.5, 1.0)
+    # asyncio.run(main(planner))
     # asyncio.run(latency_check(planner))
     # asyncio.run(speed_check(planner))
