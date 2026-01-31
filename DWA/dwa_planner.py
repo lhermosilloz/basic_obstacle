@@ -18,7 +18,7 @@ except ImportError:
     exit(1)
 
 class DynamicWindowApproachPlanner:
-    def __init__(self):
+    def __init__(self, dist, vel, obs):
         # -- MAVSDK Stuff --
         self.drone = System()
 
@@ -26,6 +26,11 @@ class DynamicWindowApproachPlanner:
         self.node = gz_transport.Node() # LiDAR subscriber node
         self.latest_scan = None         # Store latest LiDAR scan
         self.start_listening()          # Start LiDAR subscription
+
+        # Weights
+        self.w_dist = dist
+        self.w_vel = vel
+        self.w_obs = obs
 
     def sample_velocities(self, current_forward_vel, current_yaw_rate, dt=0.1):
         """Sample only forward + yaw like if it were a ground robot."""
@@ -268,10 +273,26 @@ class DynamicWindowApproachPlanner:
         
         for traj in trajectories:
             in_collision = False
-            
+
+            # UNCOMMENT LATER:
+            # min_obs_dist = float('inf')
+
             # Check fewer points along trajectory (every 3rd point)
-            check_points = traj[::3]  # Check every 3rd point instead of all
+            check_points = traj[::3]
             
+            # UNCOMMENT LATER:
+            # check_points = np.array(traj[::3])  # Check every 3rd point instead of all
+            
+            # UNCOMMENT LATER:
+            # # Shape: (Num_Path_Points, Num_Obstacles)
+            # dx = check_points[:, 0][:, np.newaxis] - obs_array[:, 0]
+            # dy = check_points[:, 1][:, np.newaxis] - obs_array[:, 1]
+            # dists = np.sqrt(dx**2 + dy**2)
+            
+            # UNCOMMENT LATER:
+            # # The single closest encounter on this entire path
+            # min_obs_dist = np.min(dists)
+
             for point in check_points:
                 px, py = point[0], point[1]
                 
@@ -283,6 +304,9 @@ class DynamicWindowApproachPlanner:
                     break  # Early termination
                     
             collision_mask.append(in_collision)
+
+            # UNCOMMENT LATER:
+            # collision_mask.append([in_collision, min_obs_dist])
         
         return collision_mask
 
@@ -383,6 +407,8 @@ class DynamicWindowApproachPlanner:
             obs_array = np.empty((0, 2))
         
         for i, traj in enumerate(trajectories):
+            # UNCOMMENT LATER:
+            # if collision_mask[i][0]:
             if collision_mask[i]:
                 scores.append(float('inf'))
                 continue
@@ -397,6 +423,9 @@ class DynamicWindowApproachPlanner:
                 min_obs_dist = np.min(distances)
             else:
                 min_obs_dist = float('inf')
+
+            # UNCOMMENT LATER:
+            # min_obs_dist = collision_mask[i][1]
             
             # Rest of scoring (simplified)
             dist_score = math.sqrt((ex - goal[0]) ** 2 + (ey - goal[1]) ** 2)
@@ -404,7 +433,7 @@ class DynamicWindowApproachPlanner:
             # Normalized Yaw Rate (0.0 to 1.0)
             norm_yaw_rate = abs(candidates[i]['yawspeed_deg_s']) / 60.0
             
-            score = 2.0 * dist_score + (-0.75 * forward_vel) + (5 / min_obs_dist) # + (0.05 * norm_yaw_rate)
+            score = (self.w_dist * dist_score) + (self.w_vel * forward_vel) + (self.w_obs * (6 / min_obs_dist)) # + (0.05 * norm_yaw_rate)
             scores.append(score)
             
         return scores
@@ -453,6 +482,9 @@ class DynamicWindowApproachPlanner:
         """
         iteration = 0
 
+        # viz = DWAVisualizer() # Initialize Visualizer
+        # frame = 0
+
         while True:
             iteration += 1
             loop_start = time.time()
@@ -484,7 +516,7 @@ class DynamicWindowApproachPlanner:
 
             # 5. Collision checking
             step_start = time.time()
-            collision_mask = self.collision_checking_ultra_optimized(trajectories, obstacles, safety_distance=0.25)
+            collision_mask = self.collision_checking_optimized(trajectories, obstacles, safety_distance=0.25)
             get_collision_time = time.time() - step_start
 
             # 6. Trajectory scoring
@@ -497,6 +529,10 @@ class DynamicWindowApproachPlanner:
             best_idx = np.argmin(scores)
             best_candidate = candidates[best_idx]
             get_best_trajectory_time = time.time() - step_start
+
+            # frame += 1
+            # if frame % 5 == 0:
+            #     viz.render(state, goal, obstacles, trajectories, collision_mask, best_idx)
 
             # 8. Stop if all in collision
             step_start = time.time()
@@ -518,7 +554,7 @@ class DynamicWindowApproachPlanner:
 
             total_loop_time = time.time() - loop_start
             
-            # Print timing every 10 iterations
+            # # Print timing every 10 iterations
             # if iteration % 10 == 0:
             #     print(f"\n=== DWA TIMING ITERATION {iteration} ===")
             #     print(f"Get State:      {get_state_time*1000:6.1f}ms")
@@ -620,7 +656,7 @@ class DynamicWindowApproachPlanner:
     def smooth_obstacle_cost(self, min_obs_dist):
         """Smooth cost function for obstacle distance"""
         lethal_dist = 1.0      # Hard collision distance
-        inflation_radius = 2.0  # Start penalizing from this distance
+        inflation_radius = 3.0  # Start penalizing from this distance
         max_cost = 3.25 # 1.6
 
         if min_obs_dist <= lethal_dist:
