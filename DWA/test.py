@@ -290,25 +290,39 @@ async def speed_check(planner):
 
 async def main(planner):
     await planner.connect_drone()
-    await planner.run_dwa_loop(goal=(10, 0), dt=0.1, stop_distance=1)
+    await planner.run_dwa_loop(goal=(0, 7), dt=0.1, stop_distance=1)
 
-def collision_check_diff_speed_trajectories(horizon=3.0, w_dist=2.0, w_vel=-0.5, w_obs=1.0):
-    planner = DynamicWindowApproachPlanner(w_dist, w_vel, w_obs)
+async def collision_check_diff_speed_trajectories(plan, horizon=3.0, w_dist=2.0, w_vel=-0.5, w_obs=1.0):
+    planner = plan
+    await planner.connect_drone()
     
+    current_state = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # Start at origin, facing east (yaw=0)
+    # async def get_state():
+    #     while True:
+    #         current_state = await planner.get_current_state()
+    #         if current_state is not None:
+    #             # [x, y, z, yaw, x_vel, y_vel, z_vel, yaw_rate]
+    #             print(f"Current State: x={current_state[0]:.2f}, y={current_state[1]:.2f}, z={current_state[2]:.2f}, yaw={current_state[3]:.2f}, x_vel={current_state[4]:.2f}, y_vel={current_state[5]:.2f}, z_vel={current_state[6]:.2f}, yaw_rate={current_state[7]:.2f}")
+    #             break
+    #         else:
+    #             print("Waiting for current state...")
+    #         await asyncio.sleep(2.0)
+    # asyncio.run(get_state())
+    current_state = await planner.get_current_state()
+
     # Get obstacles (in drone frame)
     obstacles = []
-    async def wait_for_scan():
-        while True:
-            scan = planner.get_latest_scan()
-            if scan is not None:
-                print("LiDAR data received for collision checking.")
-                return planner.get_obstacles()
-            else:
-                print("Waiting for LiDAR data...")
-                await asyncio.sleep(1.0)
-    obstacles = asyncio.run(wait_for_scan())
-
-    current_state = [0.0, 0.0, 0.0, 0.0]  # Start at origin, facing east (yaw=0)
+    # async def wait_for_scan():
+    #     while True:
+    #         scan = planner.get_latest_scan()
+    #         if scan is not None:
+    #             print("LiDAR data received for collision checking.")
+    #             return planner.get_obstacles_world((current_state[0], current_state[1], current_state[3]))
+    #         else:
+    #             print("Waiting for LiDAR data...")
+    #             await asyncio.sleep(1.0)
+    # obstacles = asyncio.run(wait_for_scan())
+    obstacles = planner.get_obstacles_world((current_state[0], current_state[1], current_state[3]))
 
     # Generate candidates and trajectories for different starting speeds
     speed_candidates = []
@@ -316,7 +330,7 @@ def collision_check_diff_speed_trajectories(horizon=3.0, w_dist=2.0, w_vel=-0.5,
     speed_collision_masks = []
     speed_scores = []
     
-    starting_speeds = range(1, 13)  # 1 m/s to 12 m/s
+    starting_speeds = range(0, 13)  # 0 m/s to 12 m/s
     
     for speed in starting_speeds:
         print(f"Processing starting speed: {speed} m/s")
@@ -404,7 +418,7 @@ def collision_check_diff_speed_trajectories(horizon=3.0, w_dist=2.0, w_vel=-0.5,
                   marker='o', zorder=5)
         
         # Plot goal
-        ax.scatter([10], [0], c='gold', s=100, marker='*', zorder=5)
+        ax.scatter([0], [7], c='gold', s=100, marker='*', zorder=5)
         
         # Formatting
         ax.set_title(f'Speed {speed} m/s\n({len([s for s in scores if s != float("inf")])}/{len(scores)} safe)')
@@ -445,9 +459,9 @@ if __name__ == "__main__":
     # visualize_velocity_space()
     # test_scanner()
     # collision_check_trajectories()
-    collision_check_diff_speed_trajectories(3.0, 2.0, -0.5, 1.0)
     # test_current_state()
-    # planner = DynamicWindowApproachPlanner(2.0, -0.5, 1.0)
-    # asyncio.run(main(planner))
+    planner = DynamicWindowApproachPlanner(2.0, -0.5, 1.0)
+    asyncio.run(main(planner))
     # asyncio.run(latency_check(planner))
     # asyncio.run(speed_check(planner))
+    # asyncio.run(collision_check_diff_speed_trajectories(planner, 3.0, 2.0, -0.5, 1.0))
