@@ -424,7 +424,7 @@ class DynamicWindowApproachPlanner:
                 distances = np.sqrt((obs_array[:, 0] - ex) ** 2 + (obs_array[:, 1] - ey) ** 2)
                 min_obs_dist = np.min(distances)
             else:
-                min_obs_dist = float('inf')
+                min_obs_dist = 1000000.0 # Won't detect anything near, but it brings the cost to zero which is what we want
 
             # UNCOMMENT LATER:
             # min_obs_dist = collision_mask[i][1]
