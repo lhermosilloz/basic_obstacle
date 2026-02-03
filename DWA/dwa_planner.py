@@ -267,6 +267,8 @@ class DynamicWindowApproachPlanner:
         # Convert obstacles to numpy array for vectorized operations
         if not obstacles:
             return [False] * len(trajectories)
+            # UNCOMMENT LATER:
+            # return [[False, 1000000.0] ] * len(trajectories)
         
         obs_array = np.array(obstacles)  # Shape: (N_obstacles, 2)
         safety_sq = safety_distance ** 2  # Avoid sqrt in inner loop
@@ -539,7 +541,7 @@ class DynamicWindowApproachPlanner:
             if all(collision_mask):
                 print("All trajectories in collision, stopping.")
                 await self.drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
-                break
+                return False
 
             # 9. Send velocity command
             await self.drone.offboard.set_velocity_body(
@@ -574,7 +576,7 @@ class DynamicWindowApproachPlanner:
             if np.linalg.norm(np.array([state[0] - goal[0], state[1] - goal[1]])) < stop_distance:
                 print("Goal reached, stopping DWA loop.")
                 await self.drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
-                break
+                return True
 
             # Pring the trajectory chosen:
             print(f"Chose forward Vel: {best_candidate['forward_m_s']:.2f} m/s, Yaw Rate: {best_candidate['yawspeed_deg_s']:.1f} deg/s")
