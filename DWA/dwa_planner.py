@@ -266,9 +266,9 @@ class DynamicWindowApproachPlanner:
         
         # Convert obstacles to numpy array for vectorized operations
         if not obstacles:
-            return [False] * len(trajectories)
+            # return [False] * len(trajectories)
             # UNCOMMENT LATER:
-            # return [[False, 1000000.0] ] * len(trajectories)
+            return [[False, 1000000.0] ] * len(trajectories)
         
         obs_array = np.array(obstacles)  # Shape: (N_obstacles, 2)
         safety_sq = safety_distance ** 2  # Avoid sqrt in inner loop
@@ -277,23 +277,23 @@ class DynamicWindowApproachPlanner:
             in_collision = False
 
             # UNCOMMENT LATER:
-            # min_obs_dist = float('inf')
+            min_obs_dist = float('inf')
 
             # Check fewer points along trajectory (every 3rd point)
             check_points = traj[::3]
             
             # UNCOMMENT LATER:
-            # check_points = np.array(traj[::3])  # Check every 3rd point instead of all
+            check_points = np.array(traj[::3])  # Check every 3rd point instead of all
             
             # UNCOMMENT LATER:
             # # Shape: (Num_Path_Points, Num_Obstacles)
-            # dx = check_points[:, 0][:, np.newaxis] - obs_array[:, 0]
-            # dy = check_points[:, 1][:, np.newaxis] - obs_array[:, 1]
-            # dists = np.sqrt(dx**2 + dy**2)
+            dx = check_points[:, 0][:, np.newaxis] - obs_array[:, 0]
+            dy = check_points[:, 1][:, np.newaxis] - obs_array[:, 1]
+            dists = np.sqrt(dx**2 + dy**2)
             
             # UNCOMMENT LATER:
             # # The single closest encounter on this entire path
-            # min_obs_dist = np.min(dists)
+            min_obs_dist = np.min(dists)
 
             for point in check_points:
                 px, py = point[0], point[1]
@@ -305,10 +305,10 @@ class DynamicWindowApproachPlanner:
                     in_collision = True
                     break  # Early termination
                     
-            collision_mask.append(in_collision)
+            # collision_mask.append(in_collision)
 
             # UNCOMMENT LATER:
-            # collision_mask.append([in_collision, min_obs_dist])
+            collision_mask.append([in_collision, min_obs_dist])
         
         return collision_mask
 
@@ -410,8 +410,8 @@ class DynamicWindowApproachPlanner:
         
         for i, traj in enumerate(trajectories):
             # UNCOMMENT LATER:
-            # if collision_mask[i][0]:
-            if collision_mask[i]:
+            if collision_mask[i][0]:
+            # if collision_mask[i]:
                 scores.append(float('inf'))
                 continue
 
@@ -427,7 +427,7 @@ class DynamicWindowApproachPlanner:
                 min_obs_dist = 1000000.0 # Won't detect anything near, but it brings the cost to zero which is what we want
 
             # UNCOMMENT LATER:
-            # min_obs_dist = collision_mask[i][1]
+            min_obs_dist = collision_mask[i][1]
             
             # Rest of scoring (simplified)
             dist_score = math.sqrt((ex - goal[0]) ** 2 + (ey - goal[1]) ** 2)
@@ -518,7 +518,7 @@ class DynamicWindowApproachPlanner:
 
             # 5. Collision checking
             step_start = time.time()
-            collision_mask = self.collision_checking_optimized(trajectories, obstacles, safety_distance=0.25)
+            collision_mask = self.collision_checking_optimized(trajectories, obstacles, safety_distance=0.5)
             get_collision_time = time.time() - step_start
 
             # 6. Trajectory scoring
@@ -538,7 +538,8 @@ class DynamicWindowApproachPlanner:
 
             # 8. Stop if all in collision
             step_start = time.time()
-            if all(collision_mask):
+            # item[0] for item in collision_mask (If forget)
+            if all(item[0] for item in collision_mask):
                 print("All trajectories in collision, stopping.")
                 await self.drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
                 return False

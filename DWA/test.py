@@ -384,8 +384,8 @@ async def collision_check_diff_speed_trajectories(plan, horizon=3.0, w_dist=2.0,
             score_range = max_score - min_score
             
             # Plot each trajectory with color based on score
-            # c_mask = [item[0] for item in collision_mask]
-            for i, (traj, score, collision) in enumerate(zip(trajectories, scores, collision_mask)):
+            c_mask = [item[0] for item in collision_mask]
+            for i, (traj, score, collision) in enumerate(zip(trajectories, scores, c_mask)):
                 xs = [pt[0] for pt in traj]
                 ys = [pt[1] for pt in traj]
                 
