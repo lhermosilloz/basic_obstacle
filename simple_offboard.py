@@ -33,8 +33,8 @@ async def run():
     print("Starting offboard mode...")
     await drone.offboard.start()
 
-    # Now command takeoff to 10 meters
-    print("Taking off to 10 meters...")
+    # Now command takeoff to 2 meters
+    print("Taking off to 2 meters...")
     await drone.offboard.set_position_ned(PositionNedYaw(0.0, 0.0, -2.0, 0.0))
     await asyncio.sleep(10)  # Give time to reach altitude
 
