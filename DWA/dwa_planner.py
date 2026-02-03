@@ -56,7 +56,7 @@ class DynamicWindowApproachPlanner:
         # Sample forward velocities (np.arange for float steps, linspace for fixed number of samples)
         for forward_vel in np.linspace(min_forward, max_forward, 8):
             # Sample yaw rates
-            for yaw_rate in np.linspace(min_yaw, max_yaw, 8):
+            for yaw_rate in np.linspace(min_yaw, max_yaw, 10):
                 candidates.append({
                     'forward_m_s': forward_vel,
                     'right_m_s': 0.0,
@@ -277,10 +277,10 @@ class DynamicWindowApproachPlanner:
             in_collision = False
 
             # UNCOMMENT LATER:
-            min_obs_dist = float('inf')
+            min_obs_dist = 1000000.0
 
             # Check fewer points along trajectory (every 3rd point)
-            check_points = traj[::3]
+            # check_points = traj[::3]
             
             # UNCOMMENT LATER:
             check_points = np.array(traj[::3])  # Check every 3rd point instead of all
@@ -301,7 +301,7 @@ class DynamicWindowApproachPlanner:
                 # Vectorized distance calculation to all obstacles
                 distances_sq = (obs_array[:, 0] - px) ** 2 + (obs_array[:, 1] - py) ** 2
                 
-                if np.any(distances_sq < safety_sq):
+                if np.any(distances_sq < safety_distance):
                     in_collision = True
                     break  # Early termination
                     
@@ -518,7 +518,7 @@ class DynamicWindowApproachPlanner:
 
             # 5. Collision checking
             step_start = time.time()
-            collision_mask = self.collision_checking_optimized(trajectories, obstacles, safety_distance=0.5)
+            collision_mask = self.collision_checking_optimized(trajectories, obstacles, safety_distance=0.28)
             get_collision_time = time.time() - step_start
 
             # 6. Trajectory scoring
@@ -557,21 +557,21 @@ class DynamicWindowApproachPlanner:
 
             total_loop_time = time.time() - loop_start
             
-            # # Print timing every 10 iterations
-            # if iteration % 10 == 0:
-            #     print(f"\n=== DWA TIMING ITERATION {iteration} ===")
-            #     print(f"Get State:      {get_state_time*1000:6.1f}ms")
-            #     print(f"Get Obstacles:  {get_obstacles_time*1000:6.1f}ms")
-            #     print(f"Sample Vels:    {get_sample_vel_time*1000:6.1f}ms")
-            #     print(f"Predict Trajs:  {get_trajectory_time*1000:6.1f}ms")
-            #     print(f"Collision Chk:  {get_collision_time*1000:6.1f}ms")
-            #     print(f"Scoring:        {get_scoring_time*1000:6.1f}ms")
-            #     print(f"Selection:      {get_best_trajectory_time*1000:6.1f}ms")
-            #     print(f"Send Command:   {get_command_time*1000:6.1f}ms")
-            #     print(f"TOTAL LOOP:     {total_loop_time*1000:6.1f}ms")
-            #     print(f"Candidates:     {len(candidates)}")
-            #     print(f"Obstacles:      {len(obstacles)}")
-            #     print(f"=====================================")
+            # Print timing every 10 iterations
+            if iteration % 10 == 0:
+                print(f"\n=== DWA TIMING ITERATION {iteration} ===")
+                print(f"Get State:      {get_state_time*1000:6.1f}ms")
+                print(f"Get Obstacles:  {get_obstacles_time*1000:6.1f}ms")
+                print(f"Sample Vels:    {get_sample_vel_time*1000:6.1f}ms")
+                print(f"Predict Trajs:  {get_trajectory_time*1000:6.1f}ms")
+                print(f"Collision Chk:  {get_collision_time*1000:6.1f}ms")
+                print(f"Scoring:        {get_scoring_time*1000:6.1f}ms")
+                print(f"Selection:      {get_best_trajectory_time*1000:6.1f}ms")
+                print(f"Send Command:   {get_command_time*1000:6.1f}ms")
+                print(f"TOTAL LOOP:     {total_loop_time*1000:6.1f}ms")
+                print(f"Candidates:     {len(candidates)}")
+                print(f"Obstacles:      {len(obstacles)}")
+                print(f"=====================================")
 
             # 10. Check if goal reached
             if np.linalg.norm(np.array([state[0] - goal[0], state[1] - goal[1]])) < stop_distance:
@@ -579,10 +579,10 @@ class DynamicWindowApproachPlanner:
                 await self.drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
                 return True
 
-            # Pring the trajectory chosen:
-            print(f"Chose forward Vel: {best_candidate['forward_m_s']:.2f} m/s, Yaw Rate: {best_candidate['yawspeed_deg_s']:.1f} deg/s")
-            # Print current state
-            print(f"Forward Vel: {state[4]:.2f} m/s, Yaw Rate: {state[7]:.1f} deg/s")
+            # # Print the trajectory chosen:
+            # print(f"Chose forward Vel: {best_candidate['forward_m_s']:.2f} m/s, Yaw Rate: {best_candidate['yawspeed_deg_s']:.1f} deg/s")
+            # # Print current state
+            # print(f"Forward Vel: {state[4]:.2f} m/s, Yaw Rate: {state[7]:.1f} deg/s")
 
             # Compensate for the 100 ms loop time with the rest it should wait
             await asyncio.sleep(dt - total_loop_time)
