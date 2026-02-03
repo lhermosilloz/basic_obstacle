@@ -289,8 +289,16 @@ async def speed_check(planner):
     await planner.speed_test()
 
 async def main(planner):
+    available_waypoints = [(10, -10), (10, 0), (10, 10), (0, -10), (0, 0), (0, 10), (-10, -10), (-10, 0), (-10, 10)]
+    waypoints = [(10, 0), (0, 0), (10, -10), (0, 0), (0, -10), (0, 0), (-10, -10), (0, 0), (-10, 0), (0, 0), (-10, 10), (0, 0), (0, 10), (0, 0), (10, 10), (0, 0)]
     await planner.connect_drone()
-    await planner.run_dwa_loop(goal=(0, 7), dt=0.1, stop_distance=1)
+    for waypoint in waypoints:
+        print(f"Navigating to waypoint: {waypoint}")
+        while True:
+            reached = await planner.run_dwa_loop(goal=waypoint, dt=0.1, stop_distance=1)
+            if reached:
+                print(f"Reached waypoint: {waypoint}")
+                break
 
 async def collision_check_diff_speed_trajectories(plan, horizon=3.0, w_dist=2.0, w_vel=-0.5, w_obs=1.0):
     planner = plan
@@ -376,6 +384,7 @@ async def collision_check_diff_speed_trajectories(plan, horizon=3.0, w_dist=2.0,
             score_range = max_score - min_score
             
             # Plot each trajectory with color based on score
+            # c_mask = [item[0] for item in collision_mask]
             for i, (traj, score, collision) in enumerate(zip(trajectories, scores, collision_mask)):
                 xs = [pt[0] for pt in traj]
                 ys = [pt[1] for pt in traj]
