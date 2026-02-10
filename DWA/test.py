@@ -352,7 +352,7 @@ async def collision_check_diff_speed_trajectories(plan, horizon=3.0, w_dist=2.0,
         speed_trajectories.append(trajectories)
         
         # Check collisions
-        collision_mask = planner.collision_checking_optimized(trajectories, obstacles, safety_distance=0.25)
+        collision_mask = planner.collision_checking_optimized(trajectories, obstacles, safety_distance=0.4)
         speed_collision_masks.append(collision_mask)
         
         # Score trajectories
@@ -470,7 +470,10 @@ if __name__ == "__main__":
     # collision_check_trajectories()
     # test_current_state()
     planner = DynamicWindowApproachPlanner(2.0, -0.5, 1.0)
-    asyncio.run(main(planner))
+
+    # Create the planne above and decide how to use it below
+
+    # asyncio.run(main(planner))
     # asyncio.run(latency_check(planner))
     # asyncio.run(speed_check(planner))
-    # asyncio.run(collision_check_diff_speed_trajectories(planner, 3.0, 2.0, -0.5, 1.0))
+    asyncio.run(collision_check_diff_speed_trajectories(planner, 3.0, 2.0, -0.5, 1.0))
