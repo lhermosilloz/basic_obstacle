@@ -35,37 +35,18 @@ async def run():
     print("Arming drone...")
     await drone.action.arm()
 
-    # Wait for drone to stabilize after arming
-    print("Stabilizing after arming...")
-    await asyncio.sleep(5)
+    # Hold current position
+    print("Holding current position...")
+    await asyncio.sleep(6)
 
-    # Climb to 1 meter above current position
-    print("Climbing to 1 meter...")
-    target_down = current_down - 1.0  # Up 1 meter (negative down)
-    await drone.offboard.set_position_ned(PositionNedYaw(current_north, current_east, target_down, 0.0))
-    await asyncio.sleep(4)
-
-    print("Holding at 1 meter altitude...")
-    await asyncio.sleep(3)
-
-    print("Beginning smooth descent...")
-    # Gradual descent back to ground level
-    descent_steps = 20  # More steps = smoother descent
-    descent_per_step = 1.0 / descent_steps  # Total 1 meter descent
-    
-    for i in range(descent_steps):
-        current_target_down = target_down + (i + 1) * descent_per_step
-        await drone.offboard.set_position_ned(PositionNedYaw(current_north, current_east, current_target_down, 0.0))
-        await asyncio.sleep(0.2)  # Small delay between steps
-    
     print("Landing...")
     await drone.action.land()
-
-    # Wait for disarming to complete
-    print("Waiting for disarm to complete...")
+    
+    # Wait for landing to complete by monitoring flight mode and armed state
+    print("Waiting for landing to complete...")
     async for armed in drone.telemetry.armed():
         if not armed:
-            print("Drone has disarmed successfully!")
+            print("Drone has landed and disarmed automatically!")
             break
 
     print("Stopping offboard mode...")
