@@ -128,24 +128,43 @@ def main():
     win.resize(600, 600)
     plot = win.addPlot(title="LiDAR Scan (Top-Down View)")
     plot.setAspectLocked(True)
+    # Flip axes: heading is upwards (y positive is forward)
     plot.setXRange(-10, 10)
-    plot.setYRange(-10, 10)
+    plot.setYRange(0, 10)
     scatter = pg.ScatterPlotItem(size=8, pen=pg.mkPen(None), brush=pg.mkBrush(0, 255, 0, 120))
     plot.addItem(scatter)
+
+    # Add a legend label for closest object
+    legend_label = pg.TextItem(text="Closest: -- m", color=(255,255,255), anchor=(0,1))
+    plot.addItem(legend_label)
+    legend_label.setPos(-10, 10)  # Top-left corner
 
     # For OBSTACLE_DISTANCE, angles are usually evenly spaced over a field of view
     def update():
         # Get points with decay
         points = reader.get_decay_points()
-        if points:
+        # Flip axes: heading is upwards (y positive is forward)
+        flipped_points = [(y, x, age_frac) for (x, y, age_frac) in points]
+        if flipped_points:
             spots = []
-            for x, y, age_frac in points:
-                # Fade alpha from 255 (new) to 0 (old)
+            for x, y, age_frac in flipped_points:
                 alpha = int(255 * (1 - age_frac))
                 spots.append({'pos': (x, y), 'brush': pg.mkBrush(0, 255, 0, alpha)})
             scatter.setData(spots)
         else:
             scatter.setData([])
+
+        # Show closest object distance in legend
+        dists = reader.get_distances()
+        if dists:
+            valid = [d for d in dists if d > 0 and not np.isinf(d) and not np.isnan(d)]
+            if valid:
+                closest = min(valid)
+                legend_label.setText(f"Closest: {closest:.2f} m")
+            else:
+                legend_label.setText("Closest: -- m")
+        else:
+            legend_label.setText("Closest: -- m")
 
     timer = QtCore.QTimer()
     timer.timeout.connect(update)
