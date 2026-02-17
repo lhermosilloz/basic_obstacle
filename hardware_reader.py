@@ -26,16 +26,19 @@ class Hardware2DLidarReader:
         self.connection_str = connection_str
         self.master = mavutil.mavlink_connection(self.connection_str)
         self.latest_msg = None
+        self.latest_height = None
         # For decay visualization
         self.decay_points = []  # List of (x, y, timestamp)
         self.decay_time = 2  # seconds
-        self.running = False
-        self.thread = None
+        self.running_obs = False
+        self.running_height = False
+        self.thread_obs = None
+        self.thread_height = None
         self.heartbeat_thread = None
         self.heartbeat_running = False
 
-    def _listen(self):
-        while self.running:
+    def _listen_obs(self):
+        while self.running_obs:
             msg = self.master.recv_match(type='OBSTACLE_DISTANCE', blocking=True, timeout=1)
             if msg:
                 self.latest_msg = msg
@@ -57,6 +60,12 @@ class Hardware2DLidarReader:
                 # Remove old points
                 self.decay_points = [(x, y, t) for (x, y, t) in self.decay_points if now - t < self.decay_time]
 
+    def _listen_height(self):
+        while self.running_height:
+            msg = self.master.recv_match(type='DISTANCE_SENSOR', blocking=True, timeout=1)
+            if msg:
+                self.latest_height = msg
+
     def _send_heartbeat(self):
         while self.heartbeat_running:
             # Send a heartbeat as a GCS (MAV_TYPE_GCS, MAV_AUTOPILOT_INVALID)
@@ -68,9 +77,13 @@ class Hardware2DLidarReader:
             time.sleep(1)
 
     def start(self):
-        self.running = True
-        self.thread = threading.Thread(target=self._listen, daemon=True)
-        self.thread.start()
+        self.running_obs = True
+        self.thread_obs = threading.Thread(target=self._listen_obs, daemon=True)
+        self.thread_obs.start()
+
+        self.running_height = True
+        self.thread_height = threading.Thread(target=self._listen_height, daemon=True)
+        self.thread_height.start()
 
         # Start heartbeat thread
         self.heartbeat_running = True
@@ -78,9 +91,13 @@ class Hardware2DLidarReader:
         self.heartbeat_thread.start()
 
     def stop(self):
-        self.running = False
-        if self.thread:
-            self.thread.join()
+        self.running_obs = False
+        if self.thread_obs:
+            self.thread_obs.join()
+
+        self.running_height = False
+        if self.thread_height:
+            self.thread_height.join()
 
         self.heartbeat_running = False
         if self.heartbeat_thread:
@@ -109,6 +126,20 @@ class Hardware2DLidarReader:
             print(f"[MAVLink] Latest 2D LiDAR distances (size: {len(dist)}): {dist}")
         else:
             print("[MAVLink] No 2D LiDAR distance received yet.")
+        
+    def get_height(self):
+        """Return the latest height in meters, or None if not available."""
+        if self.latest_height:
+            # The distance is in cm, convert to meters
+            return self.latest_height.current_distance / 100.0
+        return None
+    
+    def print_height(self):
+        height = self.get_height()
+        if height is not None:
+            print(f"[MAVLink] Latest height: {height:.2f} m")
+        else:
+            print("[MAVLink] No height data received yet.")
 
 def main():
     # Create QGuiApplication before any Qt widgets
@@ -139,6 +170,21 @@ def main():
     plot.addItem(legend_label)
     legend_label.setPos(-10, 10)  # Top-left corner
 
+    # Add a height bar to the right side
+    height_bar_plot = win.addPlot(title="Height", row=0, col=1)
+    height_bar_plot.setXRange(0, 1)
+    height_bar_plot.setYRange(0, 10)
+    height_bar_plot.setAspectLocked(False)
+    height_bar_plot.hideAxis('bottom')
+    height_bar_plot.setFixedWidth(100)
+    # BarGraphItem for height
+    bar = pg.BarGraphItem(x=[0.5], height=[0], width=0.8, brush=pg.mkBrush(255, 0, 0, 150))
+    height_bar_plot.addItem(bar)
+    # Height label
+    height_label = pg.TextItem(text="Height: -- m", color=(255,255,255), anchor=(0.5,0))
+    height_bar_plot.addItem(height_label)
+    height_label.setPos(0.5, 10)  # Top of the bar
+
     # For OBSTACLE_DISTANCE, angles are usually evenly spaced over a field of view
     def update():
         # Get points with decay
@@ -165,6 +211,17 @@ def main():
                 legend_label.setText("Closest: -- m")
         else:
             legend_label.setText("Closest: -- m")
+
+        # Update height bar
+        height = reader.get_height()
+        if height is not None:
+            bar.setOpts(height=[height])
+            height_label.setText(f"Height: {height:.2f} m")
+            height_label.setPos(0.5, height)  # Move label to top of bar
+        else:
+            bar.setOpts(height=[0])
+            height_label.setText("Height: -- m")
+            height_label.setPos(0.5, 0)  # Move label to bottom of bar
 
     timer = QtCore.QTimer()
     timer.timeout.connect(update)
