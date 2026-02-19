@@ -473,7 +473,7 @@ if __name__ == "__main__":
 
     # Create the planne above and decide how to use it below
 
-    # asyncio.run(main(planner))
+    asyncio.run(main(planner))
     # asyncio.run(latency_check(planner))
     # asyncio.run(speed_check(planner))
-    asyncio.run(collision_check_diff_speed_trajectories(planner, 3.0, 2.0, -0.5, 1.0))
+    ##asyncio.run(collision_check_diff_speed_trajectories(planner, 3.0, 2.0, -0.5, 1.0))
