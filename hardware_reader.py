@@ -20,7 +20,7 @@ except ImportError:
 from PyQt5.QtWidgets import QApplication
 # --- Hardware 2D LiDAR Reader using MAVLink ---
 class Hardware2DLidarReader:
-    def __init__(self, connection_str="udpin:0.0.0.0:14550"):
+    def __init__(self, connection_str="udpin:0.0.0.0:14551"):
         if mavutil is None:
             raise ImportError("pymavlink is required for hardware 2D LiDAR reading.")
         self.connection_str = connection_str
