@@ -20,7 +20,7 @@ from PyQt5.QtWidgets import QApplication
 import keyboard
 
 class StarlingDWA:
-    def __init__(self, sys_url: str = "udpin://0.0.0.0:14550", pml_url: str = "udpin://0.0.0.0:14551", dist: float = 1.0, vel: float = 1.0, obs: float = 1.0):
+    def __init__(self, sys_url: str = "udpin://0.0.0.0:14550", pml_url: str = "udpin:0.0.0.0:14551", dist: float = 1.0, vel: float = 1.0, obs: float = 1.0):
         # MAVSDK System
         self.drone = System()
         self.drone_sys_url = sys_url
@@ -90,10 +90,6 @@ class StarlingDWA:
         print("Arming drone...")
         await self.drone.action.arm()
 
-        # Bring up drone to a safe height
-        print("Taking off to safe height...")
-        await self.drone.action.takeoff()
-
         print("Drone ready for keyboard control and DWA!")
         self.is_flying = True
 
@@ -108,129 +104,120 @@ class StarlingDWA:
         Outputs:
         - No return value
         """
-
-        if keyboard.is_pressed('esc'):
-            print("ESC pressed - Emergency stop!")
-            self.override = True
-            await self.emergency_stop()
-            
-        if keyboard.is_pressed('l'):
-            print("L pressed - Landing...")
-            self.override = True
-            await self.emergency_stop()
         
-        # Get velocity commands from keyboard
-        forward, right, down, yaw_rate = self.get_velocity_from_keys()
-        
-        if self.override:
-            # Send velocity command to drone
-            await self.drone.offboard.set_velocity_body(
-                VelocityBodyYawspeed(forward, right, down, yaw_rate)
-            )
-            # Small delay to prevent overwhelming the system
-            await asyncio.sleep(0.05)  # 20Hz update rate
-        else:
-            iteration = 0
+        iteration = 0
 
-            while True:
-                iteration += 1
-                loop_start = time.time()
+        while True:
+            iteration += 1
+            loop_start = time.time()
 
-                # # 1. Get current state (position, yaw, etc)
-                # step_start = time.time()
-                # state = await self.get_current_state()
-                # get_state_time = time.time() - step_start
+            # # 1. Get current state (position, yaw, etc)
+            # step_start = time.time()
+            # state = await self.get_current_state()
+            # get_state_time = time.time() - step_start
 
-                # if state is None:
-                #     print("Failed to get state, retrying...")
-                #     await asyncio.sleep(dt)
-                #     continue
+            # if state is None:
+            #     print("Failed to get state, retrying...")
+            #     await asyncio.sleep(dt)
+            #     continue
 
-                # # 2. Get latest obstacles from LiDAR
-                # step_start = time.time()
-                # obstacles = self.get_obstacles((state[0], state[1], state[3]))
-                # get_obstacles_time = time.time() - step_start
+            # # 2. Get latest obstacles from LiDAR
+            # step_start = time.time()
+            # obstacles = self.get_obstacles((state[0], state[1], state[3]))
+            # get_obstacles_time = time.time() - step_start
 
-                # # 3. Sample velocities
-                # step_start = time.time()
-                # candidates = self.sample_velocities(current_forward_vel=state[4], current_yaw_rate=state[7], dt=dt)
-                # get_sample_vel_time = time.time() - step_start
+            # # 3. Sample velocities
+            # step_start = time.time()
+            # candidates = self.sample_velocities(current_forward_vel=state[4], current_yaw_rate=state[7], dt=dt)
+            # get_sample_vel_time = time.time() - step_start
 
-                # # 4. Predict trajectories
-                # step_start = time.time()
-                # trajectories = self.trajectory_prediction(current_state=state[:4], candidates=candidates, time_horizon=3.0, dt=dt)
-                # get_trajectory_time = time.time() - step_start
+            # # 4. Predict trajectories
+            # step_start = time.time()
+            # trajectories = self.trajectory_prediction(current_state=state[:4], candidates=candidates, time_horizon=3.0, dt=dt)
+            # get_trajectory_time = time.time() - step_start
 
-                # # 5. Collision checking
-                # step_start = time.time()
-                # collision_mask = self.collision_check(trajectories, obstacles, safety_distance=0.28)
-                # get_collision_time = time.time() - step_start
+            # # 5. Collision checking
+            # step_start = time.time()
+            # collision_mask = self.collision_check(trajectories, obstacles, safety_distance=0.28)
+            # get_collision_time = time.time() - step_start
 
-                # # 6. Trajectory scoring
-                # step_start = time.time()
-                # scores = self.trajectory_scoring(goal, collision_mask, trajectories, candidates, obstacles)
-                # get_scoring_time = time.time() - step_start
+            # # 6. Trajectory scoring
+            # step_start = time.time()
+            # scores = self.trajectory_scoring(goal, collision_mask, trajectories, candidates, obstacles)
+            # get_scoring_time = time.time() - step_start
 
-                # # 7. Choose best trajectory
-                # step_start = time.time()
-                # best_idx = np.argmin(scores)
-                # best_candidate = candidates[best_idx]
-                # get_best_trajectory_time = time.time() - step_start
+            # # 7. Choose best trajectory
+            # step_start = time.time()
+            # best_idx = np.argmin(scores)
+            # best_candidate = candidates[best_idx]
+            # get_best_trajectory_time = time.time() - step_start
 
-                # # 8. Stop if all in collision
-                # step_start = time.time()
-                # # item[0] for item in collision_mask (If forget)
-                # if all(item[0] for item in collision_mask):
-                #     print("All trajectories in collision, stopping.")
-                #     await self.drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
-                #     return False
+            # # 8. Stop if all in collision
+            # step_start = time.time()
+            # # item[0] for item in collision_mask (If forget)
+            # if all(item[0] for item in collision_mask):
+            #     print("All trajectories in collision, stopping.")
+            #     await self.drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
+            #     return False
 
-                # # 9. Send velocity command
-                # await self.drone.offboard.set_velocity_body(
-                #     VelocityBodyYawspeed(
-                #         best_candidate['forward_m_s'],
-                #         best_candidate['right_m_s'],
-                #         best_candidate['down_m_s'],
-                #         best_candidate['yawspeed_deg_s']
-                #     )
-                # )
+            # # 9. Send velocity command
+            # await self.drone.offboard.set_velocity_body(
+            #     VelocityBodyYawspeed(
+            #         best_candidate['forward_m_s'],
+            #         best_candidate['right_m_s'],
+            #         best_candidate['down_m_s'],
+            #         best_candidate['yawspeed_deg_s']
+            #     )
+            # )
 
-                await self.drone.offboard.set_velocity_body(
-                    VelocityBodyYawspeed(
-                        0.0,
-                        0.0,
-                        0.0,
-                        0.0
-                    )
-                )
-                # get_command_time = time.time() - step_start
-
-                total_loop_time = time.time() - loop_start
+            if keyboard.is_pressed('esc'):
+                print("ESC pressed - Emergency stop!")
+                self.override = True
+                await self.emergency_stop()
                 
-                # # Print timing every 10 iterations
-                # if iteration % 10 == 0:
-                #     print(f"\n=== DWA TIMING ITERATION {iteration} ===")
-                #     print(f"Get State:      {get_state_time*1000:6.1f}ms")
-                #     print(f"Get Obstacles:  {get_obstacles_time*1000:6.1f}ms")
-                #     print(f"Sample Vels:    {get_sample_vel_time*1000:6.1f}ms")
-                #     print(f"Predict Trajs:  {get_trajectory_time*1000:6.1f}ms")
-                #     print(f"Collision Chk:  {get_collision_time*1000:6.1f}ms")
-                #     print(f"Scoring:        {get_scoring_time*1000:6.1f}ms")
-                #     print(f"Selection:      {get_best_trajectory_time*1000:6.1f}ms")
-                #     print(f"Send Command:   {get_command_time*1000:6.1f}ms")
-                #     print(f"TOTAL LOOP:     {total_loop_time*1000:6.1f}ms")
-                #     print(f"Candidates:     {len(candidates)}")
-                #     print(f"Obstacles:      {len(obstacles)}")
-                #     print(f"=====================================")
+            if keyboard.is_pressed('l'):
+                print("L pressed - Landing...")
+                self.override = True
+                await self.emergency_stop()
 
-                # # 10. Check if goal reached
-                # if np.linalg.norm(np.array([state[0] - goal[0], state[1] - goal[1]])) < stop_distance:
-                #     print("Goal reached, stopping DWA loop.")
-                #     await self.drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
-                #     return True
+            forward, right, down, yaw_rate = self.get_velocity_from_keys()
+            
+            await self.drone.offboard.set_velocity_body(
+                VelocityBodyYawspeed(
+                    forward,
+                    right,
+                    down,
+                    yaw_rate
+                )
+            )
+            # get_command_time = time.time() - step_start
 
-                # Compensate for the 100 ms loop time with the rest it should wait
-                await asyncio.sleep(dt - total_loop_time)
+            total_loop_time = time.time() - loop_start
+            
+            # # Print timing every 10 iterations
+            # if iteration % 10 == 0:
+            #     print(f"\n=== DWA TIMING ITERATION {iteration} ===")
+            #     print(f"Get State:      {get_state_time*1000:6.1f}ms")
+            #     print(f"Get Obstacles:  {get_obstacles_time*1000:6.1f}ms")
+            #     print(f"Sample Vels:    {get_sample_vel_time*1000:6.1f}ms")
+            #     print(f"Predict Trajs:  {get_trajectory_time*1000:6.1f}ms")
+            #     print(f"Collision Chk:  {get_collision_time*1000:6.1f}ms")
+            #     print(f"Scoring:        {get_scoring_time*1000:6.1f}ms")
+            #     print(f"Selection:      {get_best_trajectory_time*1000:6.1f}ms")
+            #     print(f"Send Command:   {get_command_time*1000:6.1f}ms")
+            #     print(f"TOTAL LOOP:     {total_loop_time*1000:6.1f}ms")
+            #     print(f"Candidates:     {len(candidates)}")
+            #     print(f"Obstacles:      {len(obstacles)}")
+            #     print(f"=====================================")
+
+            # # 10. Check if goal reached
+            # if np.linalg.norm(np.array([state[0] - goal[0], state[1] - goal[1]])) < stop_distance:
+            #     print("Goal reached, stopping DWA loop.")
+            #     await self.drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
+            #     return True
+
+            # Compensate for the 100 ms loop time with the rest it should wait
+            await asyncio.sleep(dt - total_loop_time)
 
     async def get_current_state(self):
         """
@@ -619,7 +606,7 @@ class StarlingDWA:
 async def main(starling: StarlingDWA):
     available_waypoints = [(2, -2), (2, 0), (2, 2), (0, -2), (0, 0), (0, 2), (-2, -2), (-2, 0), (-2, 2)]
     waypoints = [(2, 0), (0, 0), (2, -2), (0, 0), (0, -2), (0, 0), (-2, -2), (0, 0), (-2, 0), (0, 0), (-2, 2), (0, 0), (0, 2), (0, 0), (2, 2), (0, 0)]
-    await starling.connect_drone()
+    await starling.connect_and_setup_drone()
     for waypoint in waypoints:
         print(f"Navigating to waypoint: {waypoint}")
         while True:
@@ -631,5 +618,5 @@ async def main(starling: StarlingDWA):
 if __name__ == "__main__":
     print("Starling DWA with Keyboard Override")
 
-    starling = StarlingDWA(sys_url = "udpin://0.0.0.0:14550", pml_url = "udpin://0.0.0.0:14551", dist=1.0, vel=1.0, obs=1.0)
+    starling = StarlingDWA(sys_url = "udpin://0.0.0.0:14550", pml_url = "udpin:0.0.0.0:14551", dist=1.0, vel=1.0, obs=1.0)
     asyncio.run(main(starling))
