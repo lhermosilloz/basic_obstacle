@@ -39,7 +39,7 @@ class DynamicWindowApproachPlanner:
 
         # The x500 max accelerations are found in px4 parameters
         max_hor_accel = 5.0  # m/s^2 (MPC_ACC_HOR_MAX was 5)
-        max_yaw_accel = 60.0 # deg/s^2 (MPC_YAWRAUTO_ACC was 20)
+        max_yaw_accel = 20.0 # deg/s^2 (MPC_YAWRAUTO_ACC was 20) was 60
 
         # Calculate reachable velocity ranges (How much it can change in 0.1s)
         max_forward_change = max_hor_accel * dt
@@ -47,7 +47,7 @@ class DynamicWindowApproachPlanner:
 
         # Reachable forward velocity range
         min_forward = max(0.0, current_forward_vel - max_forward_change)
-        max_forward = min(12.0, current_forward_vel + max_forward_change)    # MPC_XY_VEL_MAX / MPC_XY_CRUISE
+        max_forward = min(3.0, current_forward_vel + max_forward_change)    # MPC_XY_VEL_MAX / MPC_XY_CRUISE (Works decent with 12, but standard is 3)
 
         # Reachable yaw rate range
         min_yaw = max(-60.0, current_yaw_rate - max_yaw_change) # MPC_YAWRAUTO_MAX (was 60)
@@ -63,6 +63,15 @@ class DynamicWindowApproachPlanner:
                     'down_m_s': 0.0,
                     'yawspeed_deg_s': yaw_rate
                 })
+
+        # Append slow turns in place (0 forward velocity, only yaw)
+        for yaw_rate in np.linspace(-0.25, 0.25, 10):
+            candidates.append({
+                'forward_m_s': 0.0,
+                'right_m_s': 0.0,
+                'down_m_s': 0.0,
+                'yawspeed_deg_s': yaw_rate
+            })
 
         return candidates
 
@@ -557,21 +566,21 @@ class DynamicWindowApproachPlanner:
 
             total_loop_time = time.time() - loop_start
             
-            # Print timing every 10 iterations
-            if iteration % 10 == 0:
-                print(f"\n=== DWA TIMING ITERATION {iteration} ===")
-                print(f"Get State:      {get_state_time*1000:6.1f}ms")
-                print(f"Get Obstacles:  {get_obstacles_time*1000:6.1f}ms")
-                print(f"Sample Vels:    {get_sample_vel_time*1000:6.1f}ms")
-                print(f"Predict Trajs:  {get_trajectory_time*1000:6.1f}ms")
-                print(f"Collision Chk:  {get_collision_time*1000:6.1f}ms")
-                print(f"Scoring:        {get_scoring_time*1000:6.1f}ms")
-                print(f"Selection:      {get_best_trajectory_time*1000:6.1f}ms")
-                print(f"Send Command:   {get_command_time*1000:6.1f}ms")
-                print(f"TOTAL LOOP:     {total_loop_time*1000:6.1f}ms")
-                print(f"Candidates:     {len(candidates)}")
-                print(f"Obstacles:      {len(obstacles)}")
-                print(f"=====================================")
+            # # Print timing every 10 iterations
+            # if iteration % 10 == 0:
+            #     print(f"\n=== DWA TIMING ITERATION {iteration} ===")
+            #     print(f"Get State:      {get_state_time*1000:6.1f}ms")
+            #     print(f"Get Obstacles:  {get_obstacles_time*1000:6.1f}ms")
+            #     print(f"Sample Vels:    {get_sample_vel_time*1000:6.1f}ms")
+            #     print(f"Predict Trajs:  {get_trajectory_time*1000:6.1f}ms")
+            #     print(f"Collision Chk:  {get_collision_time*1000:6.1f}ms")
+            #     print(f"Scoring:        {get_scoring_time*1000:6.1f}ms")
+            #     print(f"Selection:      {get_best_trajectory_time*1000:6.1f}ms")
+            #     print(f"Send Command:   {get_command_time*1000:6.1f}ms")
+            #     print(f"TOTAL LOOP:     {total_loop_time*1000:6.1f}ms")
+            #     print(f"Candidates:     {len(candidates)}")
+            #     print(f"Obstacles:      {len(obstacles)}")
+            #     print(f"=====================================")
 
             # 10. Check if goal reached
             if np.linalg.norm(np.array([state[0] - goal[0], state[1] - goal[1]])) < stop_distance:
@@ -579,10 +588,10 @@ class DynamicWindowApproachPlanner:
                 await self.drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
                 return True
 
-            # # Print the trajectory chosen:
-            # print(f"Chose forward Vel: {best_candidate['forward_m_s']:.2f} m/s, Yaw Rate: {best_candidate['yawspeed_deg_s']:.1f} deg/s")
-            # # Print current state
-            # print(f"Forward Vel: {state[4]:.2f} m/s, Yaw Rate: {state[7]:.1f} deg/s")
+            # Print the trajectory chosen:
+            print(f"Chose forward Vel: {best_candidate['forward_m_s']:.2f} m/s, Yaw Rate: {best_candidate['yawspeed_deg_s']:.1f} deg/s")
+            # Print current state
+            print(f"Forward Vel: {state[4]:.2f} m/s, Yaw Rate: {state[7]:.1f} deg/s")
 
             # Compensate for the 100 ms loop time with the rest it should wait
             await asyncio.sleep(dt - total_loop_time)
@@ -607,6 +616,31 @@ class DynamicWindowApproachPlanner:
             if health.is_global_position_ok and health.is_home_position_ok:
                 print("Global position estimate OK")
                 break
+
+    async def arm(self):
+        # Get current position for initial setpoint
+        print("Getting current position...")
+        async for position in self.drone.telemetry.position_velocity_ned():
+            current_north = position.position.north_m
+            current_east = position.position.east_m
+            current_down = position.position.down_m
+            print(f"Current position: N={current_north:.2f}, E={current_east:.2f}, D={current_down:.2f}")
+            break
+
+        # Set initial setpoint to current position
+        print("Setting initial position setpoint...")
+        await self.drone.offboard.set_position_ned(PositionNedYaw(current_north, current_east, current_down, 0.0))
+
+        await self.drone.action.arm()
+
+    async def disarm(self):
+        await self.drone.action.disarm()
+
+    async def takeoff(self):
+        await self.drone.action.takeoff()
+
+    async def land(self):
+        await self.drone.action.land()
 
     async def get_current_state(self):
         """Get current state from drone telemetry"""
