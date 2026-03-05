@@ -486,7 +486,7 @@ if __name__ == "__main__":
     # test_scanner()
     # collision_check_trajectories()
     # test_current_state()
-    planner = DynamicWindowApproachPlanner(4.0, -0.5, 1.0)
+    planner = DynamicWindowApproachPlanner(4.0, -0.5, 1.0, 5, 20, 3, 60, 8, 10, 10, 0.25, 3, 0.1, 0.28, 3, 0, 0, 0)
 
     # Create the planne above and decide how to use it below
 

@@ -18,7 +18,7 @@ except ImportError:
     exit(1)
 
 class DynamicWindowApproachPlanner:
-    def __init__(self, dist, vel, obs):
+    def __init__(self, dist, vel, obs, mx_hr_acc, mx_yaw_acc, mx_fwd_vel, mx_yaw_rate, fwd_samples, yaw_samples, slow_turn_samples, slow_turn_range, time_horizon, dt, safety_distance, traj_check_spacing, lethal_dist, inflation_radius, max_obstacle_cost):
         # -- MAVSDK Stuff --
         self.drone = System()
 
@@ -32,14 +32,38 @@ class DynamicWindowApproachPlanner:
         self.w_vel = vel
         self.w_obs = obs
 
+        # Velocity Sampling
+        self.max_hor_accel = mx_hr_acc
+        self.max_yaw_accel = mx_yaw_acc
+        self.max_forward_vel = mx_fwd_vel
+        self.max_yaw_rate = mx_yaw_rate
+
+        # Sampling resolution
+        self.forward_vel_samples = fwd_samples
+        self.yaw_rate_samples = yaw_samples
+        self.slow_turn_samples = slow_turn_samples
+        self.slow_turn_range = slow_turn_range
+
+        # Trajectory prediction
+        self.time_horizon = time_horizon
+
+        # Collision Detection
+        self.safety_distance = safety_distance
+        self.trajectory_check_spacing = traj_check_spacing
+
+        # Obstacle Cost function
+        self.lethal_dist = lethal_dist
+        self.inflation_radius = inflation_radius
+        self.max_obstacle_cost = max_obstacle_cost
+
     def sample_velocities(self, current_forward_vel, current_yaw_rate, dt=0.1):
         """Sample only forward + yaw like if it were a ground robot."""
         # Only the achievable velocities are sampled
         candidates = []
 
         # The x500 max accelerations are found in px4 parameters
-        max_hor_accel = 5.0  # m/s^2 (MPC_ACC_HOR_MAX was 5)
-        max_yaw_accel = 20.0 # deg/s^2 (MPC_YAWRAUTO_ACC was 20) was 60
+        max_hor_accel = self.max_hor_accel  # m/s^2 (MPC_ACC_HOR_MAX was 5)
+        max_yaw_accel = self.max_yaw_accel # deg/s^2 (MPC_YAWRAUTO_ACC was 20) was 60
 
         # Calculate reachable velocity ranges (How much it can change in 0.1s)
         max_forward_change = max_hor_accel * dt
@@ -47,16 +71,16 @@ class DynamicWindowApproachPlanner:
 
         # Reachable forward velocity range
         min_forward = max(0.0, current_forward_vel - max_forward_change)
-        max_forward = min(3.0, current_forward_vel + max_forward_change)    # MPC_XY_VEL_MAX / MPC_XY_CRUISE (Works decent with 12, but standard is 3)
+        max_forward = min(self.max_forward_vel, current_forward_vel + max_forward_change)    # MPC_XY_VEL_MAX / MPC_XY_CRUISE (Works decent with 12, but standard is 3)
 
         # Reachable yaw rate range
-        min_yaw = max(-60.0, current_yaw_rate - max_yaw_change) # MPC_YAWRAUTO_MAX (was 60)
-        max_yaw = min(60.0, current_yaw_rate + max_yaw_change)
+        min_yaw = max(-self.max_yaw_rate, current_yaw_rate - max_yaw_change) # MPC_YAWRAUTO_MAX (was 60)
+        max_yaw = min(self.max_yaw_rate, current_yaw_rate + max_yaw_change)
         
         # Sample forward velocities (np.arange for float steps, linspace for fixed number of samples)
-        for forward_vel in np.linspace(min_forward, max_forward, 8):
+        for forward_vel in np.linspace(min_forward, max_forward, self.forward_vel_samples): # 8
             # Sample yaw rates
-            for yaw_rate in np.linspace(min_yaw, max_yaw, 10):
+            for yaw_rate in np.linspace(min_yaw, max_yaw, self.yaw_rate_samples): # 10
                 candidates.append({
                     'forward_m_s': forward_vel,
                     'right_m_s': 0.0,
@@ -65,7 +89,7 @@ class DynamicWindowApproachPlanner:
                 })
 
         # Append slow turns in place (0 forward velocity, only yaw)
-        for yaw_rate in np.linspace(-0.25, 0.25, 10):
+        for yaw_rate in np.linspace(-self.slow_turn_range, self.slow_turn_range, self.slow_turn_samples): # 0.25, 10
             candidates.append({
                 'forward_m_s': 0.0,
                 'right_m_s': 0.0,
@@ -292,7 +316,7 @@ class DynamicWindowApproachPlanner:
             # check_points = traj[::3]
             
             # UNCOMMENT LATER:
-            check_points = np.array(traj[::3])  # Check every 3rd point instead of all
+            check_points = np.array(traj[::self.trajectory_check_spacing])  # Check every 3rd point instead of all (3)
             
             # UNCOMMENT LATER:
             # # Shape: (Num_Path_Points, Num_Obstacles)
@@ -522,12 +546,12 @@ class DynamicWindowApproachPlanner:
 
             # 4. Predict trajectories
             step_start = time.time()
-            trajectories = self.trajectory_prediction_vectorized(current_state=state[:4], candidates=candidates, time_horizon=3.0, dt=dt)
+            trajectories = self.trajectory_prediction_vectorized(current_state=state[:4], candidates=candidates, time_horizon=self.time_horizon, dt=dt)
             get_trajectory_time = time.time() - step_start
 
             # 5. Collision checking
             step_start = time.time()
-            collision_mask = self.collision_checking_optimized(trajectories, obstacles, safety_distance=0.28)
+            collision_mask = self.collision_checking_optimized(trajectories, obstacles, safety_distance=self.safety_distance) # 0.28
             get_collision_time = time.time() - step_start
 
             # 6. Trajectory scoring
