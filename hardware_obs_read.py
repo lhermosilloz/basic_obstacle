@@ -106,18 +106,6 @@ class HardwareLidarReader:
         else:
             print("[MAVLink] No LiDAR distance received yet.")
         
-    def lidar_callback(self, msg):
-        """Simple callback to store latest scan data"""
-        self.latest_scan = msg
-        # print(f"Received scan with {len(msg.ranges)} points")
-        
-        # Print some basic info
-        valid_ranges = [r for r in msg.ranges if not (math.isinf(r) or math.isnan(r))]
-        # if valid_ranges:
-        #     print(f"  Min distance: {min(valid_ranges):.2f}m")
-        #     print(f"  Max distance: {max(valid_ranges):.2f}m")
-        #     print(f"  Valid points: {len(valid_ranges)}")
-
 def main():
     print("Hardware (MAVLink udpin:0.0.0.0:14551)")
 
@@ -130,6 +118,7 @@ def main():
     try:
         while True:
             reader.print_obstacle_distances()
+            reader.print_distance()
             time.sleep(1.0)
     except KeyboardInterrupt:
         print("\nStopping...")
