@@ -2,6 +2,7 @@
 import asyncio
 import matplotlib.pyplot as plt
 from dwa_planner import DynamicWindowApproachPlanner
+from mavsdk.offboard import VelocityBodyYawspeed
 import math
 
 def test_velocity_sampler():
@@ -291,7 +292,21 @@ async def speed_check(planner):
 async def main(planner):
     available_waypoints = [(10, -10), (10, 0), (10, 10), (0, -10), (0, 0), (0, 10), (-10, -10), (-10, 0), (-10, 10)]
     waypoints = [(10, 0), (0, 0), (10, -10), (0, 0), (0, -10), (0, 0), (-10, -10), (0, 0), (-10, 0), (0, 0), (-10, 10), (0, 0), (0, 10), (0, 0), (10, 10), (0, 0)]
+
     await planner.connect_drone()
+    await planner.arm()
+    await planner.takeoff()
+
+    await asyncio.sleep(10.0)
+    
+    # Set initial velocity setpoint to zero (hover)
+    print("Setting initial velocity setpoint...")
+    await planner.drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
+    
+    # Start offboard mode for DWA velocity commands
+    print("Starting offboard mode...")
+    await planner.drone.offboard.start()
+
     for waypoint in waypoints:
         print(f"Navigating to waypoint: {waypoint}")
         while True:
@@ -299,6 +314,8 @@ async def main(planner):
             if reached:
                 print(f"Reached waypoint: {waypoint}")
                 break
+    await planner.land()
+    await planner.disarm()
 
 async def collision_check_diff_speed_trajectories(plan, horizon=3.0, w_dist=2.0, w_vel=-0.5, w_obs=1.0):
     planner = plan
@@ -427,7 +444,7 @@ async def collision_check_diff_speed_trajectories(plan, horizon=3.0, w_dist=2.0,
                   marker='o', zorder=5)
         
         # Plot goal
-        ax.scatter([0], [7], c='gold', s=100, marker='*', zorder=5)
+        ax.scatter([0], [20], c='gold', s=100, marker='*', zorder=5)
         
         # Formatting
         ax.set_title(f'Speed {speed} m/s\n({len([s for s in scores if s != float("inf")])}/{len(scores)} safe)')
@@ -469,11 +486,11 @@ if __name__ == "__main__":
     # test_scanner()
     # collision_check_trajectories()
     # test_current_state()
-    planner = DynamicWindowApproachPlanner(2.0, -0.5, 1.0)
+    planner = DynamicWindowApproachPlanner(4.0, -0.5, 1.0)
 
     # Create the planne above and decide how to use it below
 
     asyncio.run(main(planner))
     # asyncio.run(latency_check(planner))
     # asyncio.run(speed_check(planner))
-    ##asyncio.run(collision_check_diff_speed_trajectories(planner, 3.0, 2.0, -0.5, 1.0))
+    # asyncio.run(collision_check_diff_speed_trajectories(planner, 3.0, 2.0, -0.5, 1.0))
