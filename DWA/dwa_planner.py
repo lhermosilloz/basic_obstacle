@@ -6,29 +6,40 @@ import asyncio
 import numpy as np
 import time
 import math
+import threading
 from mavsdk import System
 from mavsdk.offboard import VelocityBodyYawspeed, PositionNedYaw
 import matplotlib.pyplot as plt
 from dwa_visualizer import DWAVisualizer
+
 try:
     import gz.transport13 as gz_transport
 except ImportError:
     print("Error: gz-transport Python bindings not found")
     print("Install with: sudo apt install python3-gz-transport13")
-    exit(1)
+
+try:
+    from pymavlink import mavutil
+except ImportError:
+    mavutil = None
+    print("Warning: pymavlink not installed. Hardware 2D LiDAR reading will not work.")
 
 class DynamicWindowApproachPlanner:
     def __init__(self, dist, vel, obs, mx_hr_acc, mx_yaw_acc, mx_fwd_vel, mx_yaw_rate, fwd_samples, yaw_samples, slow_turn_samples, slow_turn_range, time_horizon, dt, safety_distance, traj_check_spacing, lethal_dist, inflation_radius, max_obstacle_cost, use_sim):
         # If simulation
         self.sim = use_sim
+
+        # If using pymavlink for real drone
+        self.master = None
         
         # -- MAVSDK Stuff --
         self.drone = System()
 
         # -- LiDAR Stuff --
-        self.node = gz_transport.Node() # LiDAR subscriber node
-        self.latest_scan = None         # Store latest LiDAR scan
-        self.start_listening()          # Start LiDAR subscription
+        if self.sim:
+            self.node = gz_transport.Node() # LiDAR subscriber node
+            self.latest_scan = None         # Store latest LiDAR scan
+            self.start_listening()          # Start LiDAR subscription
 
         # Weights
         self.w_dist = dist
@@ -635,7 +646,13 @@ class DynamicWindowApproachPlanner:
         
         # Connect to drone
         print("Connecting to drone...")
-        await self.drone.connect(system_address="udp://:14540")
+        if (self.sim): 
+            print("In simulation mode, connecting to Gazebo...")
+            await self.drone.connect(system_address="udp://:14540")
+        else:
+            print("In real drone mode, connecting to PX4...")
+            await self.drone.connect(system_address="udp://:14550")
+            self.master = mavutil.mavlink_connection("udpin:0.0.0.0:14551")
 
         # Wait for connection
         print("Waiting for drone to connect...")
