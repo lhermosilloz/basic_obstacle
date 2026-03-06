@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 from dwa_planner import DynamicWindowApproachPlanner
 from mavsdk.offboard import VelocityBodyYawspeed
 import math
+from dwa_control_dashboard import DWAControlDashboard
+import threading
 
 def test_velocity_sampler():
     planner = DynamicWindowApproachPlanner()
@@ -479,6 +481,18 @@ async def collision_check_diff_speed_trajectories(plan, horizon=3.0, w_dist=2.0,
         safe_percentage = (safe_count / total_count) * 100
         print(f"Speed {speed:2d} m/s: {safe_count:2d}/{total_count} safe ({safe_percentage:5.1f}%)")
 
+def main_with_dashboard(planner):
+    """
+    This version runs the dashboard with live parameter tuning during flight.
+    Click 'Start Mission' button to begin flight while tuning parameters.
+    """
+    print("Starting DWA Parameter Dashboard with live mission control...")
+    
+    # Create and run dashboard (includes 'Start Mission' button)
+    dashboard = DWAControlDashboard()
+    dashboard.connect_planner(planner)
+    dashboard.run()  # This blocks until GUI is closed
+
 if __name__ == "__main__":
     # test_velocity_sampler()
     # test_trajectory_prediction()
@@ -486,11 +500,13 @@ if __name__ == "__main__":
     # test_scanner()
     # collision_check_trajectories()
     # test_current_state()
-    planner = DynamicWindowApproachPlanner(4.0, -0.5, 1.0, 5, 20, 3, 60, 8, 10, 10, 0.25, 3, 0.1, 0.28, 3, 0, 0, 0)
+    planner = DynamicWindowApproachPlanner(4.0, -0.5, 1.0, 5.0, 20.0, 3.0, 60.0, 8, 10, 10, 0.25, 3.0, 0.1, 0.28, 3, 1.0, 3.0, 3.25)
 
-    # Create the planne above and decide how to use it below
+    # Create the planner above and decide how to use it below
 
-    asyncio.run(main(planner))
+    # Choose ONE of these options:
+    main_with_dashboard(planner)        # Option 1: Dashboard with live parameter tuning during flight
+    # asyncio.run(main(planner))        # Option 2: Run drone mission without dashboard
     # asyncio.run(latency_check(planner))
     # asyncio.run(speed_check(planner))
     # asyncio.run(collision_check_diff_speed_trajectories(planner, 3.0, 2.0, -0.5, 1.0))

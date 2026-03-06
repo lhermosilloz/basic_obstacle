@@ -56,6 +56,13 @@ class DynamicWindowApproachPlanner:
         self.inflation_radius = inflation_radius
         self.max_obstacle_cost = max_obstacle_cost
 
+    def update_parameters(self, **kwargs):
+        """Update DWA parameters in real time"""
+        for param, value in kwargs.items():
+            if hasattr(self, param):
+                setattr(self, param, value)
+                print(f"Updated {param} = {value}")
+
     def sample_velocities(self, current_forward_vel, current_yaw_rate, dt=0.1):
         """Sample only forward + yaw like if it were a ground robot."""
         # Only the achievable velocities are sampled
