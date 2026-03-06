@@ -500,13 +500,13 @@ if __name__ == "__main__":
     # test_scanner()
     # collision_check_trajectories()
     # test_current_state()
-    planner = DynamicWindowApproachPlanner(4.0, -0.5, 1.0, 5.0, 20.0, 3.0, 60.0, 8, 10, 10, 0.25, 3.0, 0.1, 0.28, 3, 1.0, 3.0, 3.25)
+    planner = DynamicWindowApproachPlanner(4.0, -0.5, 1.0, 5.0, 20.0, 3.0, 60.0, 8, 10, 10, 0.25, 3.0, 0.1, 0.28, 3, 1.0, 3.0, 3.25, True)
 
     # Create the planner above and decide how to use it below
 
     # Choose ONE of these options:
-    main_with_dashboard(planner)        # Option 1: Dashboard with live parameter tuning during flight
+    # main_with_dashboard(planner)        # Option 1: Dashboard with live parameter tuning during flight
     # asyncio.run(main(planner))        # Option 2: Run drone mission without dashboard
     # asyncio.run(latency_check(planner))
     # asyncio.run(speed_check(planner))
-    # asyncio.run(collision_check_diff_speed_trajectories(planner, 3.0, 2.0, -0.5, 1.0))
+    asyncio.run(collision_check_diff_speed_trajectories(planner, 3.0, 2.0, -0.5, 1.0))

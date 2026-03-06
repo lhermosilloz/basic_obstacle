@@ -18,7 +18,10 @@ except ImportError:
     exit(1)
 
 class DynamicWindowApproachPlanner:
-    def __init__(self, dist, vel, obs, mx_hr_acc, mx_yaw_acc, mx_fwd_vel, mx_yaw_rate, fwd_samples, yaw_samples, slow_turn_samples, slow_turn_range, time_horizon, dt, safety_distance, traj_check_spacing, lethal_dist, inflation_radius, max_obstacle_cost):
+    def __init__(self, dist, vel, obs, mx_hr_acc, mx_yaw_acc, mx_fwd_vel, mx_yaw_rate, fwd_samples, yaw_samples, slow_turn_samples, slow_turn_range, time_horizon, dt, safety_distance, traj_check_spacing, lethal_dist, inflation_radius, max_obstacle_cost, use_sim):
+        # If simulation
+        self.sim = use_sim
+        
         # -- MAVSDK Stuff --
         self.drone = System()
 
