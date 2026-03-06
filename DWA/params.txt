@@ -1,0 +1,31 @@
+1. Trajectory Scoring Weights
+# Constructor parameters - primary tuning knobs
+w_dist = 4.0     # Distance to goal weight
+w_vel = -0.5     # Velocity reward weight (negative = reward speed)
+w_obs = 1.0      # Obstacle avoidance weight
+
+2. Velocity Sampling Parameters
+# Physical limits
+max_hor_accel = 5.0      # Max horizontal acceleration (m/s²)
+max_yaw_accel = 20.0     # Max yaw acceleration (deg/s²) 
+max_forward_vel = 3.0    # Max forward velocity (m/s)
+max_yaw_rate = 60.0      # Max yaw rate (deg/s)
+
+# Sampling resolution
+forward_vel_samples = 8   # Number of forward velocity candidates
+yaw_rate_samples = 10     # Number of yaw rate candidates
+slow_turn_samples = 10    # Number of in-place turn candidates
+slow_turn_range = 0.25    # Range for slow turns (±deg/s)
+
+3. Trajectory Prediction
+time_horizon = 3.0       # Prediction time horizon (seconds)
+dt = 0.1                 # Simulation time step (seconds) 
+
+4. Collision Detection
+safety_distance = 0.28   # Safety margin around obstacles (meters)
+trajectory_check_spacing = 3  # Check every Nth point (traj[::3])
+
+5. Obstacle Cost Function
+lethal_dist = 1.0        # Hard collision distance (meters)
+inflation_radius = 3.0   # Start penalizing from this distance (meters)
+max_obstacle_cost = 3.25 # Maximum obstacle penalty
